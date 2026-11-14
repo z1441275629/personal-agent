@@ -8,6 +8,8 @@ import type {
   ListMcpServersResponse,
   CreateMcpServerRequest,
   UpdateMcpServerRequest,
+  LangsmithPublic,
+  UpsertLangsmithRequest,
 } from '@pa/shared';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -72,3 +74,14 @@ export const updateMcpServer = (
 
 export const deleteMcpServer = (id: string): Promise<void> =>
   request<void>(`/api/settings/mcp/${id}`, { method: 'DELETE' });
+
+// ---- LangSmith 追踪 ----
+
+export const fetchLangsmith = (): Promise<LangsmithPublic> =>
+  request<LangsmithPublic>('/api/settings/langsmith');
+
+export const saveLangsmith = (body: UpsertLangsmithRequest): Promise<LangsmithPublic> =>
+  request<LangsmithPublic>('/api/settings/langsmith', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });

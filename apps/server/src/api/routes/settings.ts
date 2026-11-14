@@ -11,17 +11,17 @@ settingsRouter.get('/presets', (ctx: Context) => {
   ctx.body = { presets: listPresets() };
 });
 
-settingsRouter.get('/providers', (ctx: Context) => {
-  ctx.body = { providers: settingsService.list() };
+settingsRouter.get('/providers', async (ctx: Context) => {
+  ctx.body = { providers: await settingsService.list() };
 });
 
-settingsRouter.post('/providers', (ctx: Context) => {
+settingsRouter.post('/providers', async (ctx: Context) => {
   ctx.status = 201;
-  ctx.body = settingsService.create(ctx.request.body);
+  ctx.body = await settingsService.create(ctx.request.body);
 });
 
-settingsRouter.put('/providers/:id', (ctx: Context) => {
-  ctx.body = settingsService.update(ctx.params.id, ctx.request.body);
+settingsRouter.put('/providers/:id', async (ctx: Context) => {
+  ctx.body = await settingsService.update(ctx.params.id, ctx.request.body);
 });
 
 settingsRouter.del('/providers/:id', (ctx: Context) => {
@@ -31,8 +31,18 @@ settingsRouter.del('/providers/:id', (ctx: Context) => {
 
 /** 真实调用一次模型验证配置（key 是否有效、模型名是否存在、网络是否通） */
 settingsRouter.post('/providers/:id/test', async (ctx: Context) => {
-  const setting = settingsService.getFull(ctx.params.id);
+  const setting = await settingsService.getFull(ctx.params.id);
   ctx.body = await pingProvider(setting);
+});
+
+// ---- LangSmith 追踪（设置页配置，保存即生效） ----
+
+settingsRouter.get('/langsmith', async (ctx: Context) => {
+  ctx.body = await settingsService.getLangsmithPublic();
+});
+
+settingsRouter.put('/langsmith', async (ctx: Context) => {
+  ctx.body = await settingsService.saveLangsmith(ctx.request.body);
 });
 
 // ---- MCP 服务器（stdio 外部工具）----

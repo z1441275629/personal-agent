@@ -48,7 +48,7 @@ chatRouter.post('/messages', async (ctx: Context) => {
     throw err;
   }
   // 先解析 provider：没有可用 provider 时直接 400，不留下空会话
-  const provider = chatService.resolveProvider(parsed.data.providerId);
+  const provider = await chatService.resolveProvider(parsed.data.providerId);
   const conversation = parsed.data.conversationId
     ? chatService.getConversation(parsed.data.conversationId)
     : chatService.createConversation();

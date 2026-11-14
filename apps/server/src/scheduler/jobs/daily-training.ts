@@ -30,7 +30,7 @@ function buildPrompt(topic: string): string {
 export async function runDailyTrainingJob(task: Task): Promise<NotificationDraft> {
   const topic = task.payload.topic ?? task.name;
 
-  const provider = settingsService.listFull().find((p) => p.enabled);
+  const provider = (await settingsService.listFull()).find((p) => p.enabled);
   if (!provider) {
     return {
       taskId: task.id,

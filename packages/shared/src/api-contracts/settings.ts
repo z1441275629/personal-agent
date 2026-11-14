@@ -4,6 +4,7 @@ import {
   McpServerSettingSchema,
   McpConnectionStatusSchema,
 } from '../domain/mcp';
+import { LangsmithSettingSchema, LANGSMITH_ENDPOINT_DEFAULT } from '../domain/langsmith';
 
 /** GET /api/settings/presets */
 export const ListPresetsResponseSchema = z.object({
@@ -74,3 +75,25 @@ export type CreateMcpServerRequest = z.infer<typeof CreateMcpServerRequestSchema
 /** PUT /api/settings/mcp/:id（更新，字段可选） */
 export const UpdateMcpServerRequestSchema = CreateMcpServerRequestSchema.partial();
 export type UpdateMcpServerRequest = z.infer<typeof UpdateMcpServerRequestSchema>;
+
+// ---- LangSmith 追踪 ----
+
+/** GET /api/settings/langsmith —— apiKey 只给掩码 */
+export const LangsmithPublicSchema = z.object({
+  tracing: z.boolean(),
+  endpoint: z.string(),
+  project: z.string(),
+  apiKeyMasked: z.string(),
+  /** 存储形态：encrypted=safeStorage 密文（桌面模式）/ plaintext=明文（开发模式） */
+  storage: z.enum(['encrypted', 'plaintext']),
+});
+export type LangsmithPublic = z.infer<typeof LangsmithPublicSchema>;
+
+/** PUT /api/settings/langsmith —— apiKey 留空/缺省 = 保持原值 */
+export const UpsertLangsmithRequestSchema = z.object({
+  tracing: z.boolean(),
+  endpoint: z.string().url().default(LANGSMITH_ENDPOINT_DEFAULT),
+  project: z.string().max(100).default(''),
+  apiKey: z.string().optional(),
+});
+export type UpsertLangsmithRequest = z.infer<typeof UpsertLangsmithRequestSchema>;

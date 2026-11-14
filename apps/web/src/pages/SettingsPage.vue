@@ -10,6 +10,7 @@ import type {
   Memory,
   MemoryType,
   McpServerPublic,
+  LangsmithPublic,
 } from '@pa/shared';
 import { MEMORY_TYPE_LABELS } from '@pa/shared';
 import { useSettingsStore } from '../stores/settings';
@@ -17,10 +18,13 @@ import * as memoriesApi from '../api/memories';
 import * as mcpApi from '../api/settings';
 
 const store = useSettingsStore();
+/** 模板里直接 v-for store.presets 会触发 vue-tsc 幻影 .value 报错（已知怪癖），局部化绕开 */
+const presetOptions = computed(() => store.presets);
 onMounted(() => {
   void store.load();
   void loadMemories();
   void loadMcpServers();
+  void loadLangsmith();
 });
 
 // ---------- Agent 记忆 ----------
@@ -203,6 +207,52 @@ async function removeMcp(s: McpServerPublic): Promise<void> {
     await loadMcpServers();
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+// ---------- LangSmith 追踪 ----------
+const lsLoaded = ref<LangsmithPublic | null>(null);
+const lsTracing = ref(false);
+const lsEndpoint = ref('https://api.smith.langchain.com');
+const lsProject = ref('');
+const lsApiKey = ref('');
+const lsSaving = ref(false);
+
+async function loadLangsmith(): Promise<void> {
+  try {
+    const s = await mcpApi.fetchLangsmith();
+    lsLoaded.value = s;
+    lsTracing.value = s.tracing;
+    lsEndpoint.value = s.endpoint;
+    lsProject.value = s.project;
+    lsApiKey.value = ''; // 不回填；留空提交 = 保持原值
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+const lsApiKeyPlaceholder = computed(() =>
+  lsLoaded.value?.apiKeyMasked
+    ? `已保存 ${lsLoaded.value.apiKeyMasked}，留空则保持不变`
+    : 'lsv2_pt_...',
+);
+
+async function saveLangsmithSettings(): Promise<void> {
+  lsSaving.value = true;
+  try {
+    const saved = await mcpApi.saveLangsmith({
+      tracing: lsTracing.value,
+      endpoint: lsEndpoint.value,
+      project: lsProject.value,
+      apiKey: lsApiKey.value.trim() || undefined,
+    });
+    lsLoaded.value = saved;
+    lsApiKey.value = '';
+    ElMessage.success(saved.tracing ? '已保存，追踪已启用' : '已保存，追踪已停用');
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    lsSaving.value = false;
   }
 }
 
@@ -506,6 +556,46 @@ async function submit(): Promise<void> {
       <p v-else class="hint">还没有配置 MCP 服务器。</p>
     </section>
 
+    <!-- LangSmith 追踪 -->
+    <section class="memory-section">
+      <h2>可观测性（LangSmith）</h2>
+      <p class="hint">
+        开启后对话与工具调用全链路上报 LangSmith（用于调试 Agent 行为）。
+        {{
+          lsLoaded?.storage === 'encrypted'
+            ? 'API Key 经系统安全存储加密（safeStorage）。'
+            : lsLoaded?.storage === 'plaintext'
+              ? '当前为开发模式，API Key 以明文存储。'
+              : ''
+        }}
+        保存即生效，无需重启；未配置时也可沿用 server 端 .env。
+      </p>
+
+      <el-form label-width="90px" class="ls-form">
+        <el-form-item label="启用追踪">
+          <el-switch v-model="lsTracing" />
+        </el-form-item>
+        <el-form-item label="Endpoint">
+          <el-input v-model="lsEndpoint" placeholder="https://api.smith.langchain.com" />
+        </el-form-item>
+        <el-form-item label="项目名">
+          <el-input v-model="lsProject" placeholder="personal-agent（留空用默认）" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input
+            v-model="lsApiKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="lsApiKeyPlaceholder"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="lsSaving" @click="saveLangsmithSettings">保存</el-button>
+        </el-form-item>
+      </el-form>
+    </section>
+
     <!-- 表单 -->
     <el-dialog
       v-model="showForm"
@@ -516,7 +606,7 @@ async function submit(): Promise<void> {
       <el-form ref="formRef" :model="formModel" :rules="rules" label-width="90px">
         <el-form-item label="预置模板">
           <el-select v-model="presetId" @change="onPresetChange">
-            <el-option v-for="preset in store.presets" :key="preset.id" :label="preset.label" :value="preset.id" />
+            <el-option v-for="preset in presetOptions" :key="preset.id" :label="preset.label" :value="preset.id" />
           </el-select>
         </el-form-item>
 
@@ -745,5 +835,8 @@ async function submit(): Promise<void> {
   background: rgba(0, 0, 0, 0.04);
   border-radius: 4px;
   padding: 1px 6px;
+}
+.ls-form {
+  max-width: 520px;
 }
 </style>
