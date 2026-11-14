@@ -1,4 +1,5 @@
 import type {
+  ApprovalDecisionRequest,
   ChatStreamEvent,
   Conversation,
   ListConversationsResponse,
@@ -18,6 +19,13 @@ export const fetchMessages = (conversationId: string): Promise<Message[]> =>
   request<ListMessagesResponse>(`/api/chat/conversations/${conversationId}/messages`).then(
     (r) => r.messages,
   );
+
+/** HITL 确认卡片：批准（可带修改后的参数）/拒绝 */
+export const decideApproval = (approvalId: string, body: ApprovalDecisionRequest): Promise<void> =>
+  request<void>(`/api/chat/approvals/${approvalId}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 
 /**
  * 发送消息并解析 SSE 流：`data: {json}\n\n`

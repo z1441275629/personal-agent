@@ -45,7 +45,30 @@ export const ChatStreamEventSchema = z.discriminatedUnion('type', [
     ok: z.boolean(),
     output: z.string(),
   }),
+  /**
+   * HITL 确认请求：confirm 级工具执行前挂起，等待用户批准/拒绝。
+   * input 为参数 JSON 字符串；批准时可通过 /approvals/:id 提交修改后的参数。
+   * 注意：本事件由路由层（approvalService 事件桥）直接写入 SSE，
+   * 不经过 chatService.streamReply 生成器——工具在循环内部执行时生成器正阻塞等待。
+   */
+  z.object({
+    type: z.literal('approval_request'),
+    approvalId: z.string(),
+    conversationId: z.string(),
+    name: z.string(),
+    input: z.string(),
+    /** 超时毫秒数，超时未决定自动拒绝 */
+    timeoutMs: z.number().int().positive(),
+  }),
   z.object({ type: z.literal('done'), assistantMessageId: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);
 export type ChatStreamEvent = z.infer<typeof ChatStreamEventSchema>;
+
+/** POST /api/chat/approvals/:id —— 用户对确认卡片的决定 */
+export const ApprovalDecisionRequestSchema = z.object({
+  approved: z.boolean(),
+  /** 批准时可携带修改后的参数（缺省 = 按原始参数执行）；拒绝时忽略 */
+  input: z.record(z.string(), z.unknown()).optional(),
+});
+export type ApprovalDecisionRequest = z.infer<typeof ApprovalDecisionRequestSchema>;

@@ -14,6 +14,8 @@ const EnvSchema = z.object({
   WEB_DIST_DIR: z.string().optional(),
   /** 上下文预算：对话历史超过该字符数时触发滚动摘要压缩 */
   CONTEXT_BUDGET_CHARS: z.coerce.number().int().positive().default(12_000),
+  /** HITL 确认超时（毫秒）：confirm 级工具等待用户批准的最长时间，超时自动拒绝 */
+  APPROVAL_TIMEOUT_MS: z.coerce.number().int().positive().default(5 * 60_000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

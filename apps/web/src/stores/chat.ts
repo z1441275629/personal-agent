@@ -13,6 +13,16 @@ export const useChatStore = defineStore('chat', () => {
   const streamingText = ref('');
   /** 本轮工具调用步骤（渲染用，不持久化） */
   const toolSteps = ref<{ toolCallId: string; name: string; input: string; ok?: boolean; output?: string }[]>([]);
+  /** 挂起中的 HITL 确认卡片（decided 后保留展示，随下一轮/切换清空） */
+  const approvals = ref<
+    {
+      approvalId: string;
+      name: string;
+      input: Record<string, unknown>;
+      decided?: 'approved' | 'rejected';
+      error?: string;
+    }[]
+  >([]);
   /** 正在进行的流式请求（切换会话时中断前端消费；服务端照常落库） */
   let inflight: AbortController | null = null;
 
@@ -33,6 +43,7 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null;
     streamingText.value = '';
     toolSteps.value = [];
+    approvals.value = [];
   }
 
   async function select(id: string): Promise<void> {
@@ -41,6 +52,7 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null;
     streamingText.value = '';
     toolSteps.value = [];
+    approvals.value = [];
     messages.value = await api.fetchMessages(id);
   }
 
@@ -66,6 +78,7 @@ export const useChatStore = defineStore('chat', () => {
     streaming.value = true;
     streamingText.value = '';
     toolSteps.value = [];
+    approvals.value = [];
     messages.value = [
       ...messages.value,
       {
@@ -105,6 +118,15 @@ export const useChatStore = defineStore('chat', () => {
               ? { ...s, ok: evt.ok, output: evt.output }
               : s,
           );
+        } else if (evt.type === 'approval_request') {
+          approvals.value = [
+            ...approvals.value,
+            {
+              approvalId: evt.approvalId,
+              name: evt.name,
+              input: JSON.parse(evt.input) as Record<string, unknown>,
+            },
+          ];
         } else if (evt.type === 'done') {
           assistantId = evt.assistantMessageId;
         } else if (evt.type === 'error') {
@@ -129,6 +151,32 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * HITL 决定：批准（edited 为修改后的参数，缺省用原参数）/拒绝。
+   * 决定后服务端 resolve 挂起的工具 → SSE 继续推 tool_result 与后续文本。
+   * 若审批已失效（超时自动拒绝），接口 404 → 卡片标记为已拒绝。
+   */
+  async function decideApproval(
+    approvalId: string,
+    approved: boolean,
+    edited?: Record<string, unknown>,
+  ): Promise<void> {
+    const target = approvals.value.find((a) => a.approvalId === approvalId);
+    if (!target || target.decided) return;
+    try {
+      await api.decideApproval(approvalId, {
+        approved,
+        input: approved ? (edited ?? target.input) : undefined,
+      });
+      target.decided = approved ? 'approved' : 'rejected';
+      target.error = undefined;
+    } catch (e) {
+      // 404 = 服务端已超时自动拒绝：本地同步为已拒绝态
+      target.decided = 'rejected';
+      target.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   return {
     conversations,
     activeId,
@@ -136,11 +184,13 @@ export const useChatStore = defineStore('chat', () => {
     streaming,
     streamingText,
     toolSteps,
+    approvals,
     error,
     loadConversations,
     startNewChat,
     select,
     removeConversation,
     send,
+    decideApproval,
   };
 });

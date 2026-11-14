@@ -4,6 +4,7 @@ import { ElMessageBox } from 'element-plus';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
 import MarkdownText from '../components/MarkdownText.vue';
+import ApprovalCard from '../components/ApprovalCard.vue';
 
 const chat = useChatStore();
 const settings = useSettingsStore();
@@ -114,6 +115,18 @@ function onKeydown(e: KeyboardEvent): void {
             </span>
           </div>
         </div>
+
+        <!-- HITL 确认卡片：confirm 级工具挂起等待批准（参数可编辑） -->
+        <ApprovalCard
+          v-for="a in chat.approvals"
+          :key="a.approvalId"
+          class="approval-entry"
+          :name="a.name"
+          :input="a.input"
+          :decided="a.decided"
+          :error="a.error"
+          @decide="(approved, edited) => chat.decideApproval(a.approvalId, approved, edited)"
+        />
 
         <div v-if="chat.streaming" class="bubble assistant">
           <div class="who">助手</div>
@@ -313,6 +326,9 @@ function onKeydown(e: KeyboardEvent): void {
 }
 .tool-status.fail {
   color: #b33;
+}
+.approval-entry {
+  align-self: flex-start;
 }
 .composer {
   display: flex;

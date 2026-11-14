@@ -1,11 +1,13 @@
 import Router from '@koa/router';
 import type { Context } from 'koa';
 import {
+  ApprovalDecisionRequestSchema,
   CreateConversationRequestSchema,
   SendMessageRequestSchema,
   type ChatStreamEvent,
 } from '@pa/shared';
 import { chatService } from '../../services/chat.service';
+import { approvalService, type ApprovalRequest } from '../../services/approval.service';
 
 export const chatRouter = new Router({ prefix: '/chat' });
 
@@ -63,6 +65,21 @@ chatRouter.post('/messages', async (ctx: Context) => {
     ctx.res.write(`data: ${JSON.stringify(evt)}\n\n`);
   };
 
+  // HITL 事件桥：confirm 级工具挂起时，把审批请求旁路直写 SSE。
+  // （工具在 ToolNode 内执行，streamReply 生成器此刻阻塞，无法产出该事件）
+  const onApprovalRequested = (req: ApprovalRequest): void => {
+    if (req.conversationId !== conversation.id) return;
+    send({
+      type: 'approval_request',
+      approvalId: req.approvalId,
+      conversationId: req.conversationId,
+      name: req.toolName,
+      input: JSON.stringify(req.input),
+      timeoutMs: req.timeoutMs,
+    });
+  };
+  approvalService.onRequested(onApprovalRequested);
+
   try {
     for await (const evt of chatService.streamReply(conversation, parsed.data.content, provider)) {
       send(evt);
@@ -70,6 +87,33 @@ chatRouter.post('/messages', async (ctx: Context) => {
   } catch (err) {
     send({ type: 'error', message: err instanceof Error ? err.message : String(err) });
   } finally {
+    approvalService.offRequested(onApprovalRequested);
     ctx.res.end();
   }
+});
+
+/**
+ * HITL 决定端点：批准（可带修改后的参数）/拒绝挂起中的工具执行。
+ * 404 = 审批不存在或已处理（含超时自动拒绝）。
+ */
+chatRouter.post('/approvals/:id', (ctx: Context) => {
+  const parsed = ApprovalDecisionRequestSchema.safeParse(ctx.request.body);
+  if (!parsed.success) {
+    const err = new Error(`参数校验失败: ${parsed.error.message}`) as Error & { status: number };
+    err.status = 400;
+    throw err;
+  }
+  const ok = approvalService.decide(
+    ctx.params.id,
+    parsed.data.approved,
+    parsed.data.input,
+  );
+  if (!ok) {
+    const err = new Error('该确认请求不存在或已处理（超时会自动拒绝）') as Error & {
+      status: number;
+    };
+    err.status = 404;
+    throw err;
+  }
+  ctx.status = 204;
 });
