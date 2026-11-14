@@ -1,10 +1,18 @@
 appId: com.personal.agent
 productName: Personal Agent
+npmRebuild: false
 directories:
   output: release
 files:
   - out/**
 asar: true
+extraResources:
+  # 打包好的 server 单文件 bundle（esbuild 产物，随 app 走 resources/）
+  - from: ../server/dist/server.cjs
+    to: server.cjs
+  # web 构建产物，由 server 静态托管
+  - from: ../web/dist
+    to: web-dist
 win:
   target: nsis
-# TODO(业务阶段)：apps/server 源码与 Chroma sidecar 的打包/拉起策略
+# TODO(业务阶段)：Chroma sidecar 的打包/拉起策略（RAG 阶段处理）

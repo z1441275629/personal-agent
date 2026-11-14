@@ -7,7 +7,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "dist": "electron-vite build && electron-builder"
+    "build:deps": "pnpm --filter @pa/server run bundle && pnpm --filter @pa/web run build",
+    "dist": "pnpm build:deps && electron-vite build && electron-builder",
+    "dist:dir": "pnpm build:deps && electron-vite build && electron-builder --dir"
   },
   "dependencies": {
     "@pa/shared": "workspace:*"

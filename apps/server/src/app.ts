@@ -1,11 +1,15 @@
 import Koa from 'koa';
 import cors from '@koa/cors';
 import bodyParser from '@koa/bodyparser';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { errorHandler } from './api/middleware/error';
 import { rootRouter } from './api/routes';
+import { spaStatic } from './infra/static';
+import { env } from './config';
 
 /**
- * Koa 实例组装：中间件顺序 = 错误处理 → CORS → body 解析 → 路由。
+ * Koa 实例组装：错误处理 → CORS → body 解析 → API 路由 → web 静态资源（生产模式）。
  * 注意：不要在这里写业务逻辑，用例编排属于 services/。
  */
 export function createApp(): Koa {
@@ -17,6 +21,13 @@ export function createApp(): Koa {
 
   app.use(rootRouter.routes());
   app.use(rootRouter.allowedMethods());
+
+  // web 静态资源：优先 env 注入；否则尝试 monorepo 相对路径
+  // （apps/server/src 与 apps/server/dist 距离 apps/web/dist 都是两级）
+  const webDistDir = env.WEB_DIST_DIR ?? path.resolve(__dirname, '../../web/dist');
+  if (existsSync(webDistDir)) {
+    app.use(spaStatic(webDistDir));
+  }
 
   return app;
 }

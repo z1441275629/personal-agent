@@ -90,6 +90,23 @@ pnpm dev
 pnpm dev:desktop
 ```
 
+## 生产打包
+
+```bash
+# 免安装目录版（验证用，产物在 apps/desktop/release/win-unpacked/）
+pnpm --filter @pa/desktop run dist:dir
+
+# NSIS 安装包
+pnpm --filter @pa/desktop run dist
+```
+
+打包链路：server 打成单文件 bundle（esbuild）+ web 构建产物 → extraResources →
+Electron 启动时以 utilityProcess 拉起 server 并守护，server 同时托管 web 静态资源。
+
+> 国内网络注意：如果 electron-builder 下载二进制失败（github 污染），加环境变量：
+> `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
+> 或挂本地代理 `HTTPS_PROXY=http://127.0.0.1:7897`。
+
 ## 路线图
 
 1. **地基**（当前）：monorepo 骨架 + 全链路跑通 + provider 配置

@@ -95,6 +95,16 @@ scheduler(jobs/) ──触发──▶ events 事件桥 ──IPC/子进程 stdo
 
 | 形态 | 组成 | 场景 |
 |---|---|---|
-| desktop | desktop + server + chroma sidecar | 日常使用（当前目标） |
+| desktop（已实现） | exe 内含：app.asar（main+preload）+ resources/server.cjs（esbuild 单文件 bundle）+ resources/web-dist；启动时 utilityProcess 拉起 server 并守护（健康检查 + 崩溃重启） | 日常使用 |
 | dev | server(tsx) + web(vite) + chroma(docker) | 开发 |
 | cloud | server + chroma（docker/Dockerfile.server） | 将来移动端/PWA 复用 |
+
+desktop 打包细节（`pnpm --filter @pa/desktop run dist[:dir]`）：
+1. `build:deps`：server bundle → `apps/server/dist/server.cjs`；web → `apps/web/dist`
+2. electron-vite build → `out/main` + `out/preload` → app.asar
+3. electron-builder 把 server.cjs 与 web-dist 塞进 extraResources
+4. 运行时 `server-manager.ts` 以 utilityProcess fork server.cjs，
+   注入 `PORT/HOST/DATA_DIR(userData)/WEB_DIST_DIR(resources/web-dist)`，
+   轮询 `/api/health` 确认就绪后再开窗口加载 `http://127.0.0.1:8787`
+
+TODO(业务阶段)：Chroma sidecar 进 app（RAG 阶段）；托盘常驻；开机自启。

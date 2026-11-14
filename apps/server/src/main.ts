@@ -4,8 +4,9 @@ import { env } from './config';
 /**
  * server 启动入口。
  *
- * desktop 模式：由 apps/desktop 的 server-manager 作为子进程拉起。
- * 开发模式：pnpm dev:server。
+ * 运行形态：
+ *   - 开发：pnpm dev:server（tsx）
+ *   - 生产：由 apps/desktop 的 server-manager 以 utilityProcess 拉起 dist/server.cjs
  *
  * TODO(路线图)：
  *   - scheduler/index.ts 注册 cron 任务（每日培训、提醒）
@@ -20,7 +21,11 @@ const server = app.listen(env.PORT, env.HOST, () => {
   console.log(`[@pa/server] dataDir → ${env.DATA_DIR}`);
 });
 
-// desktop 子进程模式下，父进程关闭 stdin 时常意味着要退出
-process.stdin.on('end', () => {
+// 优雅退出：desktop 关闭或容器 stop 时收尾
+function shutdown(): void {
   server.close(() => process.exit(0));
-});
+  // 兜底：3 秒后强制退出
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

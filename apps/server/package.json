@@ -8,6 +8,7 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/server.cjs",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -33,6 +34,7 @@
     "@types/koa__cors": "^5.0.1",
     "@types/koa__router": "*",
     "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "vitest": "^5.1.0"

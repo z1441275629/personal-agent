@@ -10,6 +10,8 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   CHROMA_URL: z.string().url().default('http://127.0.0.1:8000'),
   DATA_DIR: z.string().default('./data'),
+  /** web 构建产物目录（生产模式由 desktop 的 server-manager 注入） */
+  WEB_DIST_DIR: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
