@@ -4,6 +4,7 @@ export * from './domain/provider';
 export * from './domain/message';
 export * from './domain/task';
 export * from './domain/memory';
+export * from './domain/mcp';
 export * from './api-contracts/settings';
 export * from './api-contracts/chat';
 export * from './api-contracts/tasks';

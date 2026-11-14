@@ -9,15 +9,18 @@ import type {
   UpsertProviderRequest,
   Memory,
   MemoryType,
+  McpServerPublic,
 } from '@pa/shared';
 import { MEMORY_TYPE_LABELS } from '@pa/shared';
 import { useSettingsStore } from '../stores/settings';
 import * as memoriesApi from '../api/memories';
+import * as mcpApi from '../api/settings';
 
 const store = useSettingsStore();
 onMounted(() => {
   void store.load();
   void loadMemories();
+  void loadMcpServers();
 });
 
 // ---------- Agent 记忆 ----------
@@ -61,6 +64,146 @@ async function removeMemory(m: Memory): Promise<void> {
   await memoriesApi.deleteMemory(m.id);
   ElMessage.success('已删除');
   await loadMemories();
+}
+
+// ---------- MCP 服务器（stdio 外部工具） ----------
+const mcpServers = ref<McpServerPublic[]>([]);
+const mcpLoading = ref(false);
+
+async function loadMcpServers(): Promise<void> {
+  mcpLoading.value = true;
+  try {
+    mcpServers.value = await mcpApi.fetchMcpServers();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    mcpLoading.value = false;
+  }
+}
+
+const MCP_STATUS: Record<McpServerPublic['status'], { label: string; type: 'success' | 'danger' | 'info' | 'warning' }> = {
+  connected: { label: '已连接', type: 'success' },
+  connecting: { label: '连接中', type: 'warning' },
+  error: { label: '连接失败', type: 'danger' },
+  disabled: { label: '已停用', type: 'info' },
+};
+
+function mcpCommandLine(s: McpServerPublic): string {
+  return [s.command, ...s.args].join(' ');
+}
+
+// 编辑对话框（字段独立 ref）
+const showMcpForm = ref(false);
+const editingMcpId = ref<string | null>(null);
+const mcpSubmitting = ref(false);
+const mcpName = ref('');
+const mcpCommand = ref('');
+/** 每行一个参数 */
+const mcpArgsText = ref('');
+/** 每行一个 KEY=VALUE */
+const mcpEnvText = ref('');
+const mcpEnabled = ref(true);
+
+function parseLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+function openMcpCreate(): void {
+  editingMcpId.value = null;
+  mcpName.value = '';
+  mcpCommand.value = '';
+  mcpArgsText.value = '';
+  mcpEnvText.value = '';
+  mcpEnabled.value = true;
+  showMcpForm.value = true;
+}
+
+function openMcpEdit(s: McpServerPublic): void {
+  editingMcpId.value = s.id;
+  mcpName.value = s.name;
+  mcpCommand.value = s.command;
+  mcpArgsText.value = s.args.join('\n');
+  mcpEnvText.value = Object.entries(s.env)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+  mcpEnabled.value = s.enabled;
+  showMcpForm.value = true;
+}
+
+async function submitMcp(): Promise<void> {
+  if (!mcpName.value.trim() || !mcpCommand.value.trim()) {
+    ElMessage.warning('名称和命令必填');
+    return;
+  }
+  // env 行格式粗校验（VALUE 可为空）
+  const envLines = parseLines(mcpEnvText.value);
+  if (envLines.some((l) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(l))) {
+    ElMessage.warning('环境变量格式：每行一条 KEY=VALUE');
+    return;
+  }
+  const env: Record<string, string> = {};
+  for (const line of envLines) {
+    const eq = line.indexOf('=');
+    env[line.slice(0, eq)] = line.slice(eq + 1);
+  }
+  const body = {
+    name: mcpName.value.trim(),
+    command: mcpCommand.value.trim(),
+    args: parseLines(mcpArgsText.value),
+    env,
+    enabled: mcpEnabled.value,
+  };
+  mcpSubmitting.value = true;
+  try {
+    // 响应携带重连后的实时状态（连接失败也会保存，状态里带 lastError）
+    const saved = editingMcpId.value
+      ? await mcpApi.updateMcpServer(editingMcpId.value, body)
+      : await mcpApi.createMcpServer(body);
+    if (saved.status === 'connected') {
+      ElMessage.success(`已保存，「${saved.name}」连接成功（${saved.toolCount} 个工具）`);
+    } else if (saved.status === 'error') {
+      ElMessage.warning(`已保存，但连接失败：${saved.lastError ?? '未知错误'}`);
+    } else {
+      ElMessage.success('已保存');
+    }
+    showMcpForm.value = false;
+    await loadMcpServers();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    mcpSubmitting.value = false;
+  }
+}
+
+async function toggleMcp(s: McpServerPublic): Promise<void> {
+  try {
+    await mcpApi.updateMcpServer(s.id, { enabled: !s.enabled });
+    await loadMcpServers();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function removeMcp(s: McpServerPublic): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `删除 MCP 服务器「${s.name}」？（会终止其子进程，配置不可恢复）`,
+      '删除确认',
+      { type: 'warning' },
+    );
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await mcpApi.deleteMcpServer(s.id);
+    ElMessage.success('已删除');
+    await loadMcpServers();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
 }
 
 // ---------- 列表 ----------
@@ -323,6 +466,46 @@ async function submit(): Promise<void> {
       <p v-else class="hint">还没有记忆。对助理说"帮我记住…"，它自己就会存进来。</p>
     </section>
 
+    <!-- MCP 服务器（stdio 外部工具） -->
+    <section class="memory-section">
+      <div class="page-header">
+        <h2>MCP 服务器</h2>
+        <el-button type="primary" @click="openMcpCreate">＋ 添加服务器</el-button>
+      </div>
+      <p class="hint">
+        以 stdio 方式启动外部 MCP 工具进程（如 npx -y @modelcontextprotocol/server-filesystem），
+        其工具会接入对话 Agent，执行前会弹确认卡片。
+      </p>
+
+      <p v-if="mcpLoading" class="hint">加载中…</p>
+
+      <div v-else-if="mcpServers.length" class="memory-list">
+        <div v-for="s in mcpServers" :key="s.id" class="memory-item mcp-item">
+          <div class="mcp-main">
+            <div class="provider-title">
+              <strong>{{ s.name }}</strong>
+              <el-tag size="small" :type="MCP_STATUS[s.status].type" effect="plain">
+                {{ MCP_STATUS[s.status].label }}
+              </el-tag>
+              <el-tag v-if="s.status === 'connected'" size="small" type="info" effect="plain">
+                {{ s.toolCount }} 个工具
+              </el-tag>
+            </div>
+            <div class="mcp-meta">
+              <code>{{ mcpCommandLine(s) }}</code>
+            </div>
+            <p v-if="s.lastError" class="test-result">{{ s.lastError }}</p>
+          </div>
+          <div class="provider-actions">
+            <el-switch :model-value="s.enabled" @change="toggleMcp(s)" title="启用/停用" />
+            <el-button size="small" @click="openMcpEdit(s)">编辑</el-button>
+            <el-button size="small" type="danger" plain @click="removeMcp(s)">删除</el-button>
+          </div>
+        </div>
+      </div>
+      <p v-else class="hint">还没有配置 MCP 服务器。</p>
+    </section>
+
     <!-- 表单 -->
     <el-dialog
       v-model="showForm"
@@ -371,6 +554,45 @@ async function submit(): Promise<void> {
       <template #footer>
         <el-button @click="closeForm">取消</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- MCP 服务器表单 -->
+    <el-dialog
+      v-model="showMcpForm"
+      :title="(editingMcpId ? '编辑' : '添加') + ' MCP 服务器'"
+      width="520px"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="名称" required>
+          <el-input v-model="mcpName" maxlength="50" placeholder="如：filesystem / github" />
+        </el-form-item>
+        <el-form-item label="命令" required>
+          <el-input v-model="mcpCommand" placeholder="如 npx / node / python / uvx" />
+        </el-form-item>
+        <el-form-item label="参数">
+          <el-input
+            v-model="mcpArgsText"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 5 }"
+            placeholder="每行一个参数，如：&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;D:\\docs"
+          />
+        </el-form-item>
+        <el-form-item label="环境变量">
+          <el-input
+            v-model="mcpEnvText"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 5 }"
+            placeholder="每行一条 KEY=VALUE，如：&#10;GITHUB_TOKEN=ghp_xxx"
+          />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="mcpEnabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showMcpForm = false">取消</el-button>
+        <el-button type="primary" :loading="mcpSubmitting" @click="submitMcp">保存并连接</el-button>
       </template>
     </el-dialog>
   </div>
@@ -504,5 +726,24 @@ async function submit(): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mcp-item {
+  align-items: flex-start;
+}
+.mcp-main {
+  min-width: 0;
+  flex: 1;
+}
+.mcp-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+.mcp-meta code {
+  color: #557;
+  word-break: break-all;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 </style>

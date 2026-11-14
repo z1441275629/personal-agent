@@ -4,14 +4,20 @@ import { randomUUID } from 'node:crypto';
 import {
   ProviderSettingSchema,
   UpsertProviderRequestSchema,
+  CreateMcpServerRequestSchema,
+  UpdateMcpServerRequestSchema,
+  McpServerSettingSchema,
   type ProviderPublic,
   type ProviderSetting,
   type UpsertProviderRequest,
+  type McpServerSetting,
 } from '@pa/shared';
 import { env } from '../config';
 
 /**
- * Provider 配置存储：DATA_DIR/settings.json。
+ * 配置存储：DATA_DIR/settings.json。
+ *
+ * 文件结构：{ providers: [...], mcpServers: [...] }（各段可缺省）。
  *
  * 安全约定：
  *   - 对外（HTTP 响应）只给 ProviderPublic（apiKeyMasked），真实 apiKey 永不下发前端
@@ -26,21 +32,28 @@ function settingsFile(): string {
   return path.resolve(env.DATA_DIR, FILE_NAME);
 }
 
-function readFile(): ProviderSetting[] {
+/** 整份配置文件（各段容错：解析失败/缺失时回退为空） */
+function readAll(): { providers: ProviderSetting[]; mcpServers: McpServerSetting[] } {
   const file = settingsFile();
-  if (!existsSync(file)) return [];
+  if (!existsSync(file)) return { providers: [], mcpServers: [] };
   try {
-    const raw = JSON.parse(readFileSync(file, 'utf-8')) as { providers?: unknown[] };
-    return raw.providers?.map((p) => ProviderSettingSchema.parse(p)) ?? [];
+    const raw = JSON.parse(readFileSync(file, 'utf-8')) as {
+      providers?: unknown[];
+      mcpServers?: unknown[];
+    };
+    return {
+      providers: raw.providers?.map((p) => ProviderSettingSchema.parse(p)) ?? [],
+      mcpServers: raw.mcpServers?.map((s) => McpServerSettingSchema.parse(s)) ?? [],
+    };
   } catch (err) {
     console.error('[settings] settings.json 解析失败，忽略:', err);
-    return [];
+    return { providers: [], mcpServers: [] };
   }
 }
 
-function writeFile(providers: ProviderSetting[]): void {
+function writeAll(settings: { providers: ProviderSetting[]; mcpServers: McpServerSetting[] }): void {
   mkdirSync(path.resolve(env.DATA_DIR), { recursive: true });
-  writeFileSync(settingsFile(), JSON.stringify({ providers }, null, 2), 'utf-8');
+  writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), 'utf-8');
 }
 
 /** 校验失败抛 400（errorHandler 读 .status） */
@@ -70,19 +83,19 @@ function resolveApiKey(input: UpsertProviderRequest, existing?: ProviderSetting)
 }
 
 export const settingsService = {
-  /** 对外：列表（脱敏） */
+  /** 对外：provider 列表（脱敏） */
   list(): ProviderPublic[] {
-    return readFile().map(toPublic);
+    return readAll().providers.map(toPublic);
   },
 
   /** 对内：含真实 key 的完整列表（chat.service 选模型用） */
   listFull(): ProviderSetting[] {
-    return readFile();
+    return readAll().providers;
   },
 
   /** 对内：单条完整配置（测试连接用） */
   getFull(id: string): ProviderSetting {
-    const found = readFile().find((p) => p.id === id);
+    const found = readAll().providers.find((p) => p.id === id);
     if (!found) throw httpError(404, `provider 不存在: ${id}`);
     return found;
   },
@@ -100,9 +113,9 @@ export const settingsService = {
       createdAt: now,
       updatedAt: now,
     };
-    const list = readFile();
-    list.push(setting);
-    writeFile(list);
+    const settings = readAll();
+    settings.providers.push(setting);
+    writeAll(settings);
     return toPublic(setting);
   },
 
@@ -111,25 +124,78 @@ export const settingsService = {
     if (!parsed.success) {
       throw httpError(400, `参数校验失败: ${parsed.error.message}`);
     }
-    const list = readFile();
-    const idx = list.findIndex((p) => p.id === id);
+    const settings = readAll();
+    const idx = settings.providers.findIndex((p) => p.id === id);
     if (idx === -1) throw httpError(404, `provider 不存在: ${id}`);
-    const existing = list[idx]!;
-    list[idx] = {
+    const existing = settings.providers[idx]!;
+    settings.providers[idx] = {
       ...existing,
       ...parsed.data,
       apiKey: resolveApiKey(parsed.data, existing),
       id,
       updatedAt: Date.now(),
     };
-    writeFile(list);
-    return toPublic(list[idx]!);
+    writeAll(settings);
+    return toPublic(settings.providers[idx]!);
   },
 
   remove(id: string): void {
-    const list = readFile();
-    const next = list.filter((p) => p.id !== id);
-    if (next.length === list.length) throw httpError(404, `provider 不存在: ${id}`);
-    writeFile(next);
+    const settings = readAll();
+    const next = settings.providers.filter((p) => p.id !== id);
+    if (next.length === settings.providers.length) {
+      throw httpError(404, `provider 不存在: ${id}`);
+    }
+    writeAll({ ...settings, providers: next });
+  },
+
+  // ---- MCP 服务器 ----
+
+  listMcp(): McpServerSetting[] {
+    return readAll().mcpServers;
+  },
+
+  createMcp(input: unknown): McpServerSetting {
+    const parsed = CreateMcpServerRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      throw httpError(400, `参数校验失败: ${parsed.error.message}`);
+    }
+    const now = Date.now();
+    const setting: McpServerSetting = {
+      ...parsed.data,
+      id: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const settings = readAll();
+    settings.mcpServers.push(setting);
+    writeAll(settings);
+    return setting;
+  },
+
+  updateMcp(id: string, input: unknown): McpServerSetting {
+    const parsed = UpdateMcpServerRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      throw httpError(400, `参数校验失败: ${parsed.error.message}`);
+    }
+    const settings = readAll();
+    const idx = settings.mcpServers.findIndex((s) => s.id === id);
+    if (idx === -1) throw httpError(404, `MCP 服务器不存在: ${id}`);
+    settings.mcpServers[idx] = {
+      ...settings.mcpServers[idx]!,
+      ...parsed.data,
+      id,
+      updatedAt: Date.now(),
+    };
+    writeAll(settings);
+    return settings.mcpServers[idx]!;
+  },
+
+  removeMcp(id: string): void {
+    const settings = readAll();
+    const next = settings.mcpServers.filter((s) => s.id !== id);
+    if (next.length === settings.mcpServers.length) {
+      throw httpError(404, `MCP 服务器不存在: ${id}`);
+    }
+    writeAll({ ...settings, mcpServers: next });
   },
 };

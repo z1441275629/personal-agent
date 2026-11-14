@@ -21,6 +21,7 @@ import type {
 import { env } from '../config';
 import { settingsService } from './settings.service';
 import { buildAgentTools } from './agent-tools.service';
+import { mcpService } from './mcp.service';
 
 /** 与 settings.service 一致的 HTTP 错误约定（errorHandler 读 .status） */
 function httpError(status: number, message: string): Error {
@@ -147,7 +148,7 @@ export const chatService = {
         provider,
         systemPrompt,
         history: llmHistory,
-        tools: buildAgentTools(conversation.id),
+        tools: [...buildAgentTools(conversation.id), ...mcpService.listToolEntries(conversation.id)],
       });
       for await (const evt of events) {
         if (evt.type === 'chunk') {

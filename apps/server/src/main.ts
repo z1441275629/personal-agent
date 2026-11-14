@@ -2,6 +2,7 @@
 import './infra/tracing';
 import { createApp } from './app';
 import { chatService } from './services/chat.service';
+import { mcpService } from './services/mcp.service';
 import { taskScheduler } from './scheduler';
 import { env } from './config';
 
@@ -17,6 +18,10 @@ import { env } from './config';
  */
 chatService.init(); // 初始化 SQLite（DATA_DIR/personal-agent.db）
 taskScheduler.start(); // 注册定时任务（提醒 / 每日培训）
+// MCP 服务器异步连接（不阻塞监听；失败仅记录状态，设置页可见）
+void mcpService.sync().catch((err) =>
+  console.warn('[mcp] 启动同步失败:', err instanceof Error ? err.message : err),
+);
 
 const app = createApp();
 
@@ -29,6 +34,7 @@ const server = app.listen(env.PORT, env.HOST, () => {
 // 优雅退出：desktop 关闭或容器 stop 时收尾
 function shutdown(): void {
   taskScheduler.stop();
+  void mcpService.closeAll(); // 断开 MCP 子进程
   server.close(() => process.exit(0));
   // 兜底：3 秒后强制退出
   setTimeout(() => process.exit(0), 3000).unref();

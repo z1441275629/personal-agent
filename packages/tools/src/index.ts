@@ -2,3 +2,4 @@
 // 依赖方向：只允许向下引用（见 docs/architecture.md）
 export type { HitlLevel, PaToolEntry } from './base';
 export { toolRegistry } from './registry';
+export { jsonSchemaToZod } from './mcp/schema';

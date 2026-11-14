@@ -4,6 +4,10 @@ import type {
   ListProvidersResponse,
   ProviderPublic,
   TestConnectionResponse,
+  McpServerPublic,
+  ListMcpServersResponse,
+  CreateMcpServerRequest,
+  UpdateMcpServerRequest,
 } from '@pa/shared';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -45,3 +49,26 @@ export const deleteProvider = (id: string): Promise<void> =>
 
 export const testProvider = (id: string): Promise<TestConnectionResponse> =>
   request<TestConnectionResponse>(`/api/settings/providers/${id}/test`, { method: 'POST' });
+
+// ---- MCP 服务器 ----
+
+export const fetchMcpServers = (): Promise<McpServerPublic[]> =>
+  request<ListMcpServersResponse>('/api/settings/mcp').then((r) => r.servers);
+
+export const createMcpServer = (body: CreateMcpServerRequest): Promise<McpServerPublic> =>
+  request<McpServerPublic>('/api/settings/mcp', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const updateMcpServer = (
+  id: string,
+  body: UpdateMcpServerRequest,
+): Promise<McpServerPublic> =>
+  request<McpServerPublic>(`/api/settings/mcp/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+
+export const deleteMcpServer = (id: string): Promise<void> =>
+  request<void>(`/api/settings/mcp/${id}`, { method: 'DELETE' });

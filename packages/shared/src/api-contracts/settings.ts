@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { ProviderSettingSchema, ProviderPresetSchema } from '../domain/provider';
+import {
+  McpServerSettingSchema,
+  McpConnectionStatusSchema,
+} from '../domain/mcp';
 
 /** GET /api/settings/presets */
 export const ListPresetsResponseSchema = z.object({
@@ -41,3 +45,32 @@ export const TestConnectionResponseSchema = z.object({
   error: z.string().nullable(),
 });
 export type TestConnectionResponse = z.infer<typeof TestConnectionResponseSchema>;
+
+// ---- MCP 服务器（stdio 外部工具）----
+
+/** 对外暴露的 MCP 服务器（配置 + 实时连接状态） */
+export const McpServerPublicSchema = McpServerSettingSchema.extend({
+  status: McpConnectionStatusSchema,
+  /** 已连接并注册的工具数量 */
+  toolCount: z.number().int(),
+  lastError: z.string().nullable(),
+});
+export type McpServerPublic = z.infer<typeof McpServerPublicSchema>;
+
+/** GET /api/settings/mcp */
+export const ListMcpServersResponseSchema = z.object({
+  servers: z.array(McpServerPublicSchema),
+});
+export type ListMcpServersResponse = z.infer<typeof ListMcpServersResponseSchema>;
+
+/** POST /api/settings/mcp（创建） */
+export const CreateMcpServerRequestSchema = McpServerSettingSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type CreateMcpServerRequest = z.infer<typeof CreateMcpServerRequestSchema>;
+
+/** PUT /api/settings/mcp/:id（更新，字段可选） */
+export const UpdateMcpServerRequestSchema = CreateMcpServerRequestSchema.partial();
+export type UpdateMcpServerRequest = z.infer<typeof UpdateMcpServerRequestSchema>;
