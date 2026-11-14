@@ -568,7 +568,7 @@ async function submit(): Promise<void> {
           <el-input v-model="mcpName" maxlength="50" placeholder="如：filesystem / github" />
         </el-form-item>
         <el-form-item label="命令" required>
-          <el-input v-model="mcpCommand" placeholder="如 npx / node / python / uvx" />
+          <el-input v-model="mcpCommand" placeholder="命令本身，如 npx / node / python（整行粘贴会自动拆分）" />
         </el-form-item>
         <el-form-item label="参数">
           <el-input

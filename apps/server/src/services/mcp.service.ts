@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { existsSync } from 'node:fs';
 import { tool } from '@langchain/core/tools';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { jsonSchemaToZod, type PaToolEntry } from '@pa/tools';
@@ -50,7 +51,30 @@ const statusMap = new Map<
 >();
 
 function signatureOf(s: McpServerSetting): string {
-  return JSON.stringify([s.command, s.args, s.env]);
+  const { command, args } = normalizeCommand(s.command, s.args);
+  return JSON.stringify([command, args, s.env]);
+}
+
+/**
+ * 命令字段容错：用户常把整条命令行（"node E:/xx/server.ts"）填进 command。
+ * 规则：command 含空白且整串不是已存在的文件路径时，按空白拆分
+ * （双引号包裹的段视为一个 token），拆出的尾部并入 args。
+ * 整串是存在的路径（如 "C:\Program Files\tool\run.exe"）则原样保留。
+ */
+export function normalizeCommand(
+  rawCommand: string,
+  rawArgs: string[],
+): { command: string; args: string[] } {
+  const command = rawCommand.trim();
+  if (!command.includes(' ') && !command.includes('\t')) return { command, args: rawArgs };
+  if (existsSync(command)) return { command, args: rawArgs };
+  // 按空白拆分，双引号内的空白不拆
+  const tokens: string[] = [];
+  for (const part of command.match(/"[^"]*"|\S+/g) ?? []) {
+    tokens.push(part.startsWith('"') && part.endsWith('"') && part.length >= 2 ? part.slice(1, -1) : part);
+  }
+  if (tokens.length < 2) return { command, args: rawArgs };
+  return { command: tokens[0]!, args: [...tokens.slice(1), ...rawArgs] };
 }
 
 /** OpenAI function-name 兼容：字母数字下划线连字符，≤64 字符 */
@@ -96,6 +120,7 @@ function extractResultText(result: unknown): string {
 /** 建立单个服务器连接（spawn + initialize + listTools） */
 async function connect(server: McpServerSetting): Promise<void> {
   statusMap.set(server.id, { status: 'connecting', toolCount: 0, lastError: null });
+  const { command, args } = normalizeCommand(server.command, server.args);
   // 继承当前进程环境再覆盖用户配置（npx/node/python 需要 PATH 等）；
   // Windows 下裸命令（npx 等）是 .cmd，必须 shell 才能拉起
   const childEnv: Record<string, string> = {};
@@ -104,10 +129,19 @@ async function connect(server: McpServerSetting): Promise<void> {
   }
   Object.assign(childEnv, server.env);
   const transport = new StdioClientTransport({
-    command: server.command,
-    args: server.args,
+    command,
+    args,
     env: childEnv,
+    stderr: 'pipe', // 子进程 stderr 收集进 lastError（"Connection closed" 才有线索）
     ...(process.platform === 'win32' ? { spawn: { shell: true } } : {}),
+  });
+  // stderr 头部缓冲（PassThrough 在 start 前就可挂监听，早期报错不丢）。
+  // 失败诊断看开头几行（如 "Cannot find module ..."），保留前 2KB。
+  let stderrHead = '';
+  transport.stderr?.on('data', (chunk: Buffer) => {
+    const text = String(chunk);
+    console.error(`[mcp:${server.name}] ${text.trimEnd()}`);
+    if (stderrHead.length < 2_000) stderrHead = (stderrHead + text).slice(0, 2_000);
   });
   const client = new Client({ name: 'personal-agent', version: '0.1.0' });
   try {
@@ -138,10 +172,13 @@ async function connect(server: McpServerSetting): Promise<void> {
     console.log(`[mcp] 已连接 ${server.name} → ${tools.length} 个工具`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const detail = stderrHead.trim()
+      ? `${message} | 子进程输出: ${stderrHead.trim().slice(0, 500)}`
+      : message;
     // 失败也要收掉子进程（close 内部会 kill transport）
     await client.close().catch(() => undefined);
-    statusMap.set(server.id, { status: 'error', toolCount: 0, lastError: message });
-    console.warn(`[mcp] 连接 ${server.name} 失败: ${message}`);
+    statusMap.set(server.id, { status: 'error', toolCount: 0, lastError: detail });
+    console.warn(`[mcp] 连接 ${server.name} 失败: ${detail}`);
   }
 }
 
