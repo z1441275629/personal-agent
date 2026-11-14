@@ -7,4 +7,5 @@ coverage/
 .env
 .DS_Store
 *.log
+# 运行数据目录：内含 settings.json（明文 apiKey），严禁入库
 data/

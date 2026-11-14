@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@langchain/anthropic": "^1.6.5",
     "@langchain/core": "^1.4.1",
+    "@langchain/openai": "^1.8.4",
     "@pa/infra": "workspace:*",
     "@pa/shared": "workspace:*",
     "langchain": "^1.6.6"

@@ -12,3 +12,4 @@ minimumReleaseAgeExclude:
   - electron@45.3.2
   - langchain@1.6.6
   - vue-router@5.5.1
+  - '@langchain/anthropic@1.6.5'
