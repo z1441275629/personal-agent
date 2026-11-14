@@ -5,6 +5,7 @@ import { formatMemories, selectMemories } from '@pa/memory';
 import { memoriesRepo } from '@pa/persistence';
 import { taskService } from './task.service';
 import { approvalService } from './approval.service';
+import { knowledgeService } from './knowledge.service';
 
 /**
  * Agent 内置工具集：LangChain tool() + zod schema 定义，
@@ -122,10 +123,38 @@ export function buildAgentTools(conversationId: string): PaToolEntry[] {
     },
   );
 
+  const searchKnowledge = tool(
+    async ({ query, top_k }) => {
+      try {
+        const { mode, results } = await knowledgeService.search(query, top_k);
+        if (!results.length) {
+          return `知识库中没有找到与「${query}」相关的内容。请基于自身知识回答，或建议用户先把相关资料导入知识库。`;
+        }
+        const lines = results.map(
+          (r, i) =>
+            `【${i + 1}｜来源：${r.docName} · 第${r.chunkIndex + 1}块｜相关度 ${r.score.toFixed(3)}】\n${r.text}`,
+        );
+        return `（${mode === 'vector' ? '向量' : '关键词'}检索，共 ${results.length} 条）\n\n${lines.join('\n\n')}`;
+      } catch (err) {
+        return `知识库检索失败：${err instanceof Error ? err.message : String(err)}`;
+      }
+    },
+    {
+      name: 'search_knowledge',
+      description:
+        '搜索用户知识库中的文档内容（用户导入的笔记/资料）。回答涉及用户文档的问题前先调用本工具获取原文依据。',
+      schema: z.object({
+        query: z.string().describe('检索关键词或问题（用文档中可能出现的表述）'),
+        top_k: z.number().int().min(1).max(10).optional().describe('返回条数，默认 5'),
+      }),
+    },
+  );
+
   return [
     { tool: getTime, hitl: 'auto', source: 'builtin' },
     { tool: saveMemory, hitl: 'auto', source: 'builtin' },
     { tool: recallMemories, hitl: 'auto', source: 'builtin' },
+    { tool: searchKnowledge, hitl: 'auto', source: 'builtin' },
     // HITL 确认卡片：执行前挂起，等用户批准（可改参数）/拒绝，超时自动拒绝
     { tool: createTask, hitl: 'confirm', source: 'builtin' },
   ];

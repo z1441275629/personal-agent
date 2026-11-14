@@ -22,6 +22,7 @@ import { env } from '../config';
 import { settingsService } from './settings.service';
 import { buildAgentTools } from './agent-tools.service';
 import { mcpService } from './mcp.service';
+import { knowledgeService } from './knowledge.service';
 
 /** 与 settings.service 一致的 HTTP 错误约定（errorHandler 读 .status） */
 function httpError(status: number, message: string): Error {
@@ -137,9 +138,13 @@ export const chatService = {
       }
     }
 
-    // ---- ② 记忆注入 + system prompt ----
+    // ---- ② 记忆注入 + 知识库文档名 + system prompt ----
     const memories = selectMemories(memoriesRepo.list(), content);
-    const systemPrompt = buildSystemPrompt({ memories, summary });
+    const systemPrompt = buildSystemPrompt({
+      memories,
+      summary,
+      knowledgeDocNames: knowledgeService.docNames(),
+    });
 
     // ---- ③ LangChain agent 工具循环 ----
     let full = '';

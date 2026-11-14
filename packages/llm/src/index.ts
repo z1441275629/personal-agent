@@ -4,3 +4,4 @@ export * from './providers/registry';
 export * from './providers/factory';
 export * from './stream';
 export * from './prompts';
+export { embedTexts } from './embeddings';

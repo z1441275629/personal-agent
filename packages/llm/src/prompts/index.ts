@@ -5,6 +5,8 @@ export interface SystemPromptInput {
   memories: Memory[];
   /** 上下文压缩产生的早期对话滚动摘要 */
   summary: string | null;
+  /** 知识库文档名（引导模型在相关问题上调用 search_knowledge） */
+  knowledgeDocNames?: string[];
 }
 
 /**
@@ -39,6 +41,16 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (input.summary) {
     sections.push(`## 本会话早期对话摘要（更早的原文已压缩）\n${input.summary}`);
+  }
+
+  if (input.knowledgeDocNames?.length) {
+    sections.push(
+      [
+        '## 用户知识库（已有文档）',
+        input.knowledgeDocNames.map((n) => `- ${n}`).join('\n'),
+        '与这些文档主题相关的问题，先调用 search_knowledge 检索再回答，不要凭空编造文档内容。',
+      ].join('\n'),
+    );
   }
 
   sections.push(

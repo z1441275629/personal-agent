@@ -10,12 +10,14 @@ import {
   LangsmithSettingSchema,
   UpsertLangsmithRequestSchema,
   LANGSMITH_ENDPOINT_DEFAULT,
+  KnowledgeSettingsSchema,
   type ProviderPublic,
   type ProviderSetting,
   type UpsertProviderRequest,
   type McpServerSetting,
   type LangsmithSetting,
   type LangsmithPublic,
+  type KnowledgeSettings,
 } from '@pa/shared';
 import { env } from '../config';
 import { applyLangsmithEnv } from '../infra/tracing';
@@ -44,6 +46,7 @@ function readAll(): {
   providers: ProviderSetting[];
   mcpServers: McpServerSetting[];
   langsmith?: LangsmithSetting;
+  knowledge?: KnowledgeSettings;
 } {
   const file = settingsFile();
   if (!existsSync(file)) return { providers: [], mcpServers: [] };
@@ -52,11 +55,13 @@ function readAll(): {
       providers?: unknown[];
       mcpServers?: unknown[];
       langsmith?: unknown;
+      knowledge?: unknown;
     };
     return {
       providers: raw.providers?.map((p) => ProviderSettingSchema.parse(p)) ?? [],
       mcpServers: raw.mcpServers?.map((s) => McpServerSettingSchema.parse(s)) ?? [],
       langsmith: raw.langsmith ? LangsmithSettingSchema.parse(raw.langsmith) : undefined,
+      knowledge: raw.knowledge ? KnowledgeSettingsSchema.parse(raw.knowledge) : undefined,
     };
   } catch (err) {
     console.error('[settings] settings.json 解析失败，忽略:', err);
@@ -68,6 +73,7 @@ function writeAll(settings: {
   providers: ProviderSetting[];
   mcpServers: McpServerSetting[];
   langsmith?: LangsmithSetting;
+  knowledge?: KnowledgeSettings;
 }): void {
   mkdirSync(path.resolve(env.DATA_DIR), { recursive: true });
   writeFileSync(
@@ -77,6 +83,7 @@ function writeAll(settings: {
         providers: settings.providers,
         mcpServers: settings.mcpServers,
         ...(settings.langsmith ? { langsmith: settings.langsmith } : {}),
+        ...(settings.knowledge ? { knowledge: settings.knowledge } : {}),
       },
       null,
       2,
@@ -314,5 +321,22 @@ export const settingsService = {
     const s = readAll().langsmith;
     if (!s) return; // 未在设置页配置 → 维持 .env/环境变量行为
     applyLangsmithEnv({ ...s, apiKey: await secureStore.decrypt(s.apiKey) });
+  },
+
+  // ---- 知识库（embedding 单独配置，与对话模型解耦） ----
+
+  /** 未配置时给默认值 */
+  getKnowledge(): KnowledgeSettings {
+    return readAll().knowledge ?? { embeddingProviderId: null, embeddingModel: '', topK: 5 };
+  },
+
+  saveKnowledge(input: unknown): KnowledgeSettings {
+    const parsed = KnowledgeSettingsSchema.safeParse(input);
+    if (!parsed.success) {
+      throw httpError(400, `参数校验失败: ${parsed.error.message}`);
+    }
+    const settings = readAll();
+    writeAll({ ...settings, knowledge: parsed.data });
+    return parsed.data;
   },
 };
