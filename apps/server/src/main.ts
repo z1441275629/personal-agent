@@ -1,3 +1,5 @@
+// LangSmith 追踪必须最先加载（在所有 LangChain 模块运行前就位）
+import './infra/tracing';
 import { createApp } from './app';
 import { chatService } from './services/chat.service';
 import { taskScheduler } from './scheduler';
