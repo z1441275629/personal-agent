@@ -2,5 +2,8 @@
 // 依赖方向：只允许向下引用（见 docs/architecture.md）
 export * from './domain/provider';
 export * from './domain/message';
+export * from './domain/task';
 export * from './api-contracts/settings';
 export * from './api-contracts/chat';
+export * from './api-contracts/tasks';
+export * from './api-contracts/notifications';

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
 
@@ -35,6 +36,15 @@ async function handleSend(): Promise<void> {
   await chat.send(content, providerId.value || undefined);
 }
 
+async function confirmRemove(id: string, title: string): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除会话「${title}」？`, '删除确认', { type: 'warning' });
+  } catch {
+    return; // 用户取消
+  }
+  await chat.removeConversation(id);
+}
+
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -64,7 +74,7 @@ function onKeydown(e: KeyboardEvent): void {
           <button
             class="icon-btn"
             title="删除会话"
-            @click.stop="chat.removeConversation(c.id)"
+            @click.stop="confirmRemove(c.id, c.title)"
           >
             ×
           </button>
@@ -121,7 +131,8 @@ function onKeydown(e: KeyboardEvent): void {
 <style scoped>
 .chat-page {
   display: flex;
-  height: 100vh;
+  flex: 1;
+  min-height: 0; /* 布局内容区高度自适应（顶栏下） */
 }
 .sidebar {
   width: 240px;

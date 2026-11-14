@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import type { FormInstance, FormRules } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import type {
   ProviderProtocol,
   ProviderPublic,
@@ -43,38 +45,82 @@ function testError(id: string): string {
 async function doTest(p: ProviderPublic): Promise<void> {
   testing.value = { ...testing.value, [p.id]: 'loading' };
   try {
-    testing.value = { ...testing.value, [p.id]: await store.test(p.id) };
+    const result = await store.test(p.id);
+    testing.value = { ...testing.value, [p.id]: result };
+    if (result.ok) ElMessage.success(`「${p.name}」连接成功（${result.latencyMs ?? '-'}ms）`);
+    else ElMessage.error(`「${p.name}」连接失败：${result.error ?? '未知错误'}`);
   } catch (e) {
     testing.value = {
       ...testing.value,
       [p.id]: { ok: false, latencyMs: null, error: e instanceof Error ? e.message : String(e) },
     };
+    ElMessage.error(e instanceof Error ? e.message : String(e));
   }
 }
 
 async function doRemove(p: ProviderPublic): Promise<void> {
-  if (!window.confirm(`删除 provider「${p.name}」？`)) return;
+  try {
+    await ElMessageBox.confirm(`删除 provider「${p.name}」？`, '删除确认', { type: 'warning' });
+  } catch {
+    return; // 用户取消
+  }
   if (editingId.value === p.id) closeForm();
   await store.remove(p.id);
+  ElMessage.success('已删除');
 }
 
-// ---------- 表单 ----------
+// ---------- 表单（字段用独立 ref，v-model 直接绑定） ----------
 const showForm = ref(false);
 const editingId = ref<string | null>(null);
 /** 编辑中已有 key 的掩码（展示用，绝不回填真实 key） */
 const editingMasked = ref('');
+const formRef = ref<FormInstance>();
 
-const form = reactive({
-  presetId: 'openai',
-  name: '',
-  protocol: 'openai-compatible' as ProviderProtocol,
-  baseURL: '',
-  apiKey: '',
-  model: '',
-  enabled: true,
-});
+const presetId = ref('openai');
+const name = ref('');
+const protocol = ref<ProviderProtocol>('openai-compatible');
+const baseURL = ref('');
+const apiKey = ref('');
+const model = ref('');
+const enabled = ref(true);
 
-const currentPreset = computed(() => store.presets.find((p) => p.id === form.presetId));
+/** el-form 校验用的 model 快照（只读；写入全部通过各字段的 v-model） */
+const formModel = computed(() => ({
+  presetId: presetId.value,
+  name: name.value,
+  protocol: protocol.value,
+  baseURL: baseURL.value,
+  apiKey: apiKey.value,
+  model: model.value,
+  enabled: enabled.value,
+}));
+
+/** 新建必须填 key；编辑留空 = 保持原值 */
+const apiKeyValidator = (_rule: unknown, value: string, callback: (e?: Error) => void): void => {
+  if (!editingId.value && !String(value ?? '').trim()) {
+    callback(new Error('新建时必须填写 API Key'));
+  } else {
+    callback();
+  }
+};
+
+const rules: FormRules = {
+  name: [
+    { required: true, message: '请输入名称', trigger: 'blur' },
+    { max: 100, message: '名称最多 100 字', trigger: 'blur' },
+  ],
+  baseURL: [
+    { required: true, message: '请输入 Base URL', trigger: 'blur' },
+    { pattern: /^https?:\/\/.+/, message: '需以 http:// 或 https:// 开头', trigger: 'blur' },
+  ],
+  apiKey: [{ validator: apiKeyValidator, trigger: 'blur' }],
+  model: [
+    { required: true, message: '请输入模型名', trigger: 'blur' },
+    { max: 100, message: '模型名最多 100 字', trigger: 'blur' },
+  ],
+};
+
+const currentPreset = computed(() => store.presets.find((p) => p.id === presetId.value));
 const apiKeyPlaceholder = computed(() =>
   editingId.value
     ? `已保存 ${editingMasked.value}，留空则保持不变`
@@ -84,24 +130,22 @@ const apiKeyPlaceholder = computed(() =>
 function onPresetChange(): void {
   const preset = currentPreset.value;
   if (preset) {
-    form.protocol = preset.protocol;
-    form.baseURL = preset.baseURL;
-    form.model = preset.defaultModel;
+    protocol.value = preset.protocol;
+    baseURL.value = preset.baseURL;
+    model.value = preset.defaultModel;
   }
 }
 
 function openCreate(): void {
   editingId.value = null;
   editingMasked.value = '';
-  Object.assign(form, {
-    presetId: 'openai',
-    name: '',
-    protocol: 'openai-compatible',
-    baseURL: '',
-    apiKey: '',
-    model: '',
-    enabled: true,
-  });
+  presetId.value = 'openai';
+  name.value = '';
+  protocol.value = 'openai-compatible';
+  baseURL.value = '';
+  apiKey.value = '';
+  model.value = '';
+  enabled.value = true;
   onPresetChange();
   showForm.value = true;
 }
@@ -109,16 +153,14 @@ function openCreate(): void {
 function openEdit(p: ProviderPublic): void {
   editingId.value = p.id;
   editingMasked.value = p.apiKeyMasked;
-  Object.assign(form, {
-    presetId: p.presetId,
-    name: p.name,
-    protocol: p.protocol,
-    baseURL: p.baseURL,
-    // 不回填真实 key：留空提交 = 保持原值
-    apiKey: '',
-    model: p.model,
-    enabled: p.enabled,
-  });
+  presetId.value = p.presetId;
+  name.value = p.name;
+  protocol.value = p.protocol;
+  baseURL.value = p.baseURL;
+  // 不回填真实 key：留空提交 = 保持原值
+  apiKey.value = '';
+  model.value = p.model;
+  enabled.value = p.enabled;
   showForm.value = true;
 }
 
@@ -128,30 +170,29 @@ function closeForm(): void {
 }
 
 const submitting = ref(false);
-const formError = ref<string | null>(null);
 
 async function submit(): Promise<void> {
-  formError.value = null;
-  // 编辑时 apiKey 可留空（保持原值）；创建时必填
-  const needKey = !editingId.value && !form.apiKey.trim();
-  if (!form.name.trim() || !form.baseURL || !form.model.trim() || needKey) {
-    formError.value = '请完整填写：名称 / baseURL / 模型' + (needKey ? ' / API Key' : '');
-    return;
-  }
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) return;
+
   submitting.value = true;
   try {
-    const key = form.apiKey.trim();
+    const key = apiKey.value.trim();
     const body: UpsertProviderRequest = {
-      ...form,
-      name: form.name.trim(),
-      model: form.model.trim(),
+      presetId: presetId.value,
+      name: name.value.trim(),
+      protocol: protocol.value,
+      baseURL: baseURL.value,
+      model: model.value.trim(),
+      enabled: enabled.value,
       // 留空则不带该字段，服务端保持原值
       apiKey: key || undefined,
     };
     await store.save(body, editingId.value ?? undefined);
+    ElMessage.success(editingId.value ? '已保存' : '已创建');
     closeForm();
   } catch (e) {
-    formError.value = e instanceof Error ? e.message : String(e);
+    ElMessage.error(e instanceof Error ? e.message : String(e));
   } finally {
     submitting.value = false;
   }
@@ -162,7 +203,7 @@ async function submit(): Promise<void> {
   <div class="settings-page">
     <header class="page-header">
       <h1>模型服务配置</h1>
-      <button class="btn primary" @click="openCreate">＋ 添加 Provider</button>
+      <el-button type="primary" @click="openCreate">＋ 添加 Provider</el-button>
     </header>
 
     <p v-if="store.error" class="banner error">加载失败：{{ store.error }}</p>
@@ -174,12 +215,14 @@ async function submit(): Promise<void> {
         <div class="provider-main">
           <div class="provider-title">
             <strong>{{ p.name }}</strong>
-            <span class="tag">{{ presetLabel(p) }}</span>
-            <span class="tag" :class="p.enabled ? 'ok' : 'muted'">{{ p.enabled ? '已启用' : '已停用' }}</span>
+            <el-tag size="small" effect="plain">{{ presetLabel(p) }}</el-tag>
+            <el-tag :type="p.enabled ? 'success' : 'info'" size="small" effect="plain">
+              {{ p.enabled ? '已启用' : '已停用' }}
+            </el-tag>
           </div>
           <div class="provider-meta">
             <code>{{ p.model }}</code>
-            <span class="tag">{{ p.apiKeyMasked }}</span>
+            <el-tag size="small" type="info" effect="plain">{{ p.apiKeyMasked }}</el-tag>
             <span class="muted">{{ p.baseURL }}</span>
           </div>
           <p v-if="tested(p.id)" class="test-result" :class="{ ok: testOk(p.id) }">
@@ -188,75 +231,64 @@ async function submit(): Promise<void> {
           </p>
         </div>
         <div class="provider-actions">
-          <button class="btn" :disabled="isTesting(p.id)" @click="doTest(p)">
-            {{ isTesting(p.id) ? '测试中…' : '测试连接' }}
-          </button>
-          <button class="btn" @click="openEdit(p)">编辑</button>
-          <button class="btn danger" @click="doRemove(p)">删除</button>
+          <el-button size="small" :loading="isTesting(p.id)" @click="doTest(p)">测试连接</el-button>
+          <el-button size="small" @click="openEdit(p)">编辑</el-button>
+          <el-button size="small" type="danger" plain @click="doRemove(p)">删除</el-button>
         </div>
       </article>
     </section>
-    <p v-else-if="!store.loading" class="empty">
-      还没有配置任何模型服务，点右上角「添加 Provider」开始。
-    </p>
+    <el-empty v-else-if="!store.loading" description="还没有配置任何模型服务，点右上角「添加 Provider」开始" />
 
     <!-- 表单 -->
-    <div v-if="showForm" class="modal-mask" @click.self="closeForm">
-      <form class="modal" @submit.prevent="submit">
-        <h2>{{ editingId ? '编辑' : '添加' }} Provider</h2>
+    <el-dialog
+      v-model="showForm"
+      :title="(editingId ? '编辑' : '添加') + ' Provider'"
+      width="520px"
+      @closed="formRef?.resetFields()"
+    >
+      <el-form ref="formRef" :model="formModel" :rules="rules" label-width="90px">
+        <el-form-item label="预置模板">
+          <el-select v-model="presetId" @change="onPresetChange">
+            <el-option v-for="preset in store.presets" :key="preset.id" :label="preset.label" :value="preset.id" />
+          </el-select>
+        </el-form-item>
 
-        <label>
-          预置模板
-          <select v-model="form.presetId" @change="onPresetChange">
-            <option v-for="preset in store.presets" :key="preset.id" :value="preset.id">
-              {{ preset.label }}
-            </option>
-          </select>
-        </label>
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="name" maxlength="100" show-word-limit placeholder="如：我的豆包 / 公司 DeepSeek" />
+        </el-form-item>
 
-        <label>
-          名称
-          <input v-model="form.name" placeholder="如：我的豆包 / 公司 DeepSeek" required />
-        </label>
+        <el-form-item label="Base URL" prop="baseURL">
+          <el-input v-model="baseURL" placeholder="https://..." />
+        </el-form-item>
 
-        <label>
-          Base URL
-          <input v-model="form.baseURL" placeholder="https://..." required />
-        </label>
-
-        <label>
-          API Key
-          <input
-            v-model="form.apiKey"
+        <el-form-item label="API Key" prop="apiKey">
+          <el-input
+            v-model="apiKey"
             type="password"
+            show-password
             autocomplete="new-password"
             :placeholder="apiKeyPlaceholder"
           />
-        </label>
+        </el-form-item>
 
-        <label>
-          模型
-          <input v-model="form.model" list="model-suggestions" required />
-          <datalist id="model-suggestions">
-            <option v-for="m in currentPreset?.models ?? []" :key="m" :value="m" />
-          </datalist>
-        </label>
+        <el-form-item label="模型" prop="model">
+          <el-input v-model="model" placeholder="模型名">
+            <template #suffix>
+              <span class="muted">可选：{{ (currentPreset?.models ?? []).slice(0, 3).join(' / ') }}</span>
+            </template>
+          </el-input>
+        </el-form-item>
 
-        <label class="checkbox">
-          <input v-model="form.enabled" type="checkbox" />
-          启用
-        </label>
+        <el-form-item label="启用">
+          <el-switch v-model="enabled" />
+        </el-form-item>
+      </el-form>
 
-        <p v-if="formError" class="banner error">{{ formError }}</p>
-
-        <footer class="modal-actions">
-          <button type="button" class="btn" @click="closeForm">取消</button>
-          <button type="submit" class="btn primary" :disabled="submitting">
-            {{ submitting ? '保存中…' : '保存' }}
-          </button>
-        </footer>
-      </form>
-    </div>
+      <template #footer>
+        <el-button @click="closeForm">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -265,6 +297,7 @@ async function submit(): Promise<void> {
   max-width: 860px;
   margin: 0 auto;
   padding: 24px;
+  width: 100%;
 }
 .page-header {
   display: flex;
@@ -288,10 +321,22 @@ async function submit(): Promise<void> {
 .provider-card.disabled {
   opacity: 0.55;
 }
+.provider-main {
+  min-width: 0;
+}
 .provider-title {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
+}
+.provider-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-title .el-tag {
+  flex-shrink: 0;
 }
 .provider-meta {
   display: flex;
@@ -299,6 +344,7 @@ async function submit(): Promise<void> {
   margin-top: 6px;
   font-size: 13px;
   flex-wrap: wrap;
+  align-items: center;
 }
 .provider-actions {
   display: flex;
@@ -306,24 +352,9 @@ async function submit(): Promise<void> {
   align-items: flex-start;
   flex-shrink: 0;
 }
-.tag {
-  font-size: 12px;
-  border: 1px solid #ccc;
-  border-radius: 999px;
-  padding: 1px 8px;
-  color: #666;
-}
-.tag.ok {
-  color: #16794a;
-  border-color: #16794a;
-}
 .muted {
   color: #888;
-}
-.empty {
-  color: #888;
-  padding: 32px 0;
-  text-align: center;
+  font-size: 12px;
 }
 .test-result {
   margin: 8px 0 0;
@@ -342,67 +373,5 @@ async function submit(): Promise<void> {
 .banner.error {
   background: #fdecec;
   color: #b33;
-}
-.btn {
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fff;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-.btn.primary {
-  background: #2c6ecb;
-  border-color: #2c6ecb;
-  color: #fff;
-}
-.btn.danger {
-  color: #b33;
-  border-color: #e5b4b4;
-}
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-.modal {
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px 24px;
-  width: min(480px, 92vw);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.modal label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-}
-.modal input,
-.modal select {
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 14px;
-}
-.modal .checkbox {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
 }
 </style>

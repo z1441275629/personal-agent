@@ -1,1 +1,54 @@
-/* 全局样式占位 */
+/* 全局基础样式：reset + 字体 + 滚动条 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* body 默认 margin 会让 100vh 布局溢出出滚动条，必须清零 */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #303133;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 统一细滚动条（Electron/Chromium 生效；Firefox 走 scrollbar-width） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c9cdd4;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8adb5;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
+}

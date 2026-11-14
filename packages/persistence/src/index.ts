@@ -4,3 +4,7 @@
 export { initDb, getDb, resetDb } from './db';
 export { conversationsRepo } from './repositories/conversations';
 export { messagesRepo } from './repositories/messages';
+export { tasksRepo } from './repositories/tasks';
+export type { TaskUpdate } from './repositories/tasks';
+export { notificationsRepo } from './repositories/notifications';
+export type { NotificationDraft } from './repositories/notifications';

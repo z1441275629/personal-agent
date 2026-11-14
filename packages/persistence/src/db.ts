@@ -31,6 +31,29 @@ export function initDb(dataDir: string): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages(conversation_id, created_at);
+    CREATE TABLE IF NOT EXISTS tasks (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      cron        TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      last_run_at INTEGER,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id         TEXT PRIMARY KEY,
+      task_id    TEXT,
+      type       TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      content    TEXT,
+      read_at    INTEGER,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_created
+      ON notifications(created_at DESC);
   `);
   // 迁移：旧库 conversations 表没有 deleted_at（软删除标记）时补列，存量数据不动
   const columns = db.prepare('PRAGMA table_info(conversations)').all() as unknown as { name: string }[];
