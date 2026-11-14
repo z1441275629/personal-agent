@@ -1,0 +1,22 @@
+{
+  "name": "@pa/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "dist": "electron-vite build && electron-builder"
+  },
+  "dependencies": {
+    "@pa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "typescript": "^5.9.0"
+  }
+}

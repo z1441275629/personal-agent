@@ -1,0 +1,22 @@
+{
+  "name": "@pa/retrieval",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "检索：索引、切分、检索器、RAG 管线",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/community": "^1.1.29",
+    "@langchain/core": "^1.4.1",
+    "@pa/infra": "workspace:*",
+    "@pa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

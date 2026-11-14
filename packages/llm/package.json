@@ -1,0 +1,22 @@
+{
+  "name": "@pa/llm",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "LLM 接入：provider 注册、客户端工厂、输出解析、提示词",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.4.1",
+    "@pa/infra": "workspace:*",
+    "@pa/shared": "workspace:*",
+    "langchain": "^1.6.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

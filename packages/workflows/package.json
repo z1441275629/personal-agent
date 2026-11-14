@@ -1,0 +1,23 @@
+{
+  "name": "@pa/workflows",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "工作流：agent 循环、planner-executor、调研",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@langchain/langgraph": "^1.7.4",
+    "@pa/agents": "workspace:*",
+    "@pa/memory": "workspace:*",
+    "@pa/shared": "workspace:*",
+    "@pa/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

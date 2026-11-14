@@ -1,0 +1,17 @@
+# 独立部署 server 用（desktop 模式不需要；开发期直接 pnpm dev:server）
+FROM node:22-alpine
+RUN corepack enable
+WORKDIR /app
+
+# 安装依赖（需要先提交 pnpm-lock.yaml）
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/server/package.json apps/server/
+COPY packages packages/
+RUN pnpm install --frozen-lockfile
+
+# 源码（packages 以源码形式被 tsx 直接消费，无需预构建）
+COPY apps/server apps/server/
+
+ENV NODE_ENV=production
+EXPOSE 8787
+CMD ["pnpm", "--filter", "@pa/server", "start"]

@@ -1,0 +1,19 @@
+{
+  "name": "@pa/guardrails",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "护栏：输入输出校验与过滤",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

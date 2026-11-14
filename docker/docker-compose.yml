@@ -1,0 +1,9 @@
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: pa-chroma
+    ports:
+      - '8000:8000'
+    volumes:
+      - ../data/chroma:/chroma/chroma
+    restart: unless-stopped

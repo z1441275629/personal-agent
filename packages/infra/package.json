@@ -1,0 +1,21 @@
+{
+  "name": "@pa/infra",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "基础设施：日志、Chroma 客户端、HTTP、文件",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pa/shared": "workspace:*",
+    "chromadb": "^3.5.0",
+    "pino": "^10.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

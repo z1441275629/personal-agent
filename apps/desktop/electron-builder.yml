@@ -1,0 +1,10 @@
+appId: com.personal.agent
+productName: Personal Agent
+directories:
+  output: release
+files:
+  - out/**
+asar: true
+win:
+  target: nsis
+# TODO(业务阶段)：apps/server 源码与 Chroma sidecar 的打包/拉起策略

@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 12+：允许执行安装脚本的依赖（esbuild 二进制为 vite 所必需）
+allowBuilds:
+  electron-winstaller: true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@langchain/core@1.4.1'
+  - electron@45.3.2
+  - langchain@1.6.6
+  - vue-router@5.5.1

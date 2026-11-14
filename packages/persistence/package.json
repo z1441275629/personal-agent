@@ -1,0 +1,19 @@
+{
+  "name": "@pa/persistence",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "持久化：实体、仓储、迁移",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

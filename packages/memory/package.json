@@ -1,0 +1,20 @@
+{
+  "name": "@pa/memory",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "记忆：短期、长期、情景",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pa/infra": "workspace:*",
+    "@pa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
