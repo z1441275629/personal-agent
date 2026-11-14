@@ -14,15 +14,30 @@ export type KnowledgeDocument = z.infer<typeof KnowledgeDocumentSchema>;
 
 /**
  * 知识库设置（settings.json 的 knowledge 段）。
- * embedding 单独配置：可指定任意 provider（含停用的）+ 模型名，
- * 与对话模型解耦；模型留空 = 关闭向量检索，走关键词兜底。
+ * embedding 是独立完整配置（baseURL + apiKey + 模型），不依赖对话 provider；
+ * apiKey 存储层可为 safe:v1: 密文（同 provider/LangSmith），API 层只下发掩码。
+ * 三项任一为空 = 关闭向量检索，走关键词兜底。
  */
+export const KnowledgeEmbeddingSchema = z.object({
+  baseURL: z.string().default(''),
+  apiKey: z.string().default(''),
+  model: z.string().default(''),
+});
+export type KnowledgeEmbedding = z.infer<typeof KnowledgeEmbeddingSchema>;
+
 export const KnowledgeSettingsSchema = z.object({
-  /** 用于 embedding 的 provider id；null = 跟随第一个启用的 provider */
-  embeddingProviderId: z.string().nullable().default(null),
-  /** embedding 模型名（空 = 关键词检索） */
-  embeddingModel: z.string().default(''),
+  embedding: KnowledgeEmbeddingSchema,
   /** 检索返回条数 */
   topK: z.number().int().min(1).max(20).default(5),
 });
 export type KnowledgeSettings = z.infer<typeof KnowledgeSettingsSchema>;
+
+/** 旧版 knowledge 段（provider 引用式）→ 新版独立配置的迁移：丢弃引用，保留 topK */
+export function migrateKnowledgeSettings(raw: unknown): KnowledgeSettings | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const parsed = KnowledgeSettingsSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const legacy = raw as { topK?: unknown };
+  const topK = typeof legacy.topK === 'number' && legacy.topK >= 1 && legacy.topK <= 20 ? Math.floor(legacy.topK) : 5;
+  return { embedding: { baseURL: '', apiKey: '', model: '' }, topK };
+}

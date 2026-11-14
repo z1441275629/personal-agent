@@ -2,11 +2,12 @@ import type { ProviderSetting } from '@pa/shared';
 
 /**
  * OpenAI 兼容 /embeddings 调用（知识库向量化用）。
+ * 只需 baseURL + apiKey —— 知识库的 embedding 是独立配置，不依赖对话 provider。
  * 注意：部分网关（如方舟 coding 计划端点）只代理对话模型、不支持 embeddings，
  * 调用方需捕获错误并降级到关键词检索。
  */
 export async function embedTexts(
-  provider: ProviderSetting,
+  provider: Pick<ProviderSetting, 'baseURL' | 'apiKey'>,
   model: string,
   texts: string[],
 ): Promise<number[][]> {

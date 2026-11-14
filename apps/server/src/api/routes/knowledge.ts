@@ -45,14 +45,15 @@ knowledgeRouter.get('/settings', async (ctx: Context) => {
   ctx.body = await knowledgeService.getSettingsView();
 });
 
-knowledgeRouter.put('/settings', (ctx: Context) => {
+knowledgeRouter.put('/settings', async (ctx: Context) => {
   const parsed = UpsertKnowledgeSettingsRequestSchema.safeParse(ctx.request.body);
   if (!parsed.success) {
     const err = new Error(`参数校验失败: ${parsed.error.message}`) as Error & { status: number };
     err.status = 400;
     throw err;
   }
-  ctx.body = settingsService.saveKnowledge(parsed.data);
+  await settingsService.saveKnowledge(parsed.data);
+  ctx.body = await knowledgeService.getSettingsView();
 });
 
 /** 按当前 embedding 配置重建全部向量索引 */

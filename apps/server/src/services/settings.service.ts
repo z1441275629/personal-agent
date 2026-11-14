@@ -11,6 +11,7 @@ import {
   UpsertLangsmithRequestSchema,
   LANGSMITH_ENDPOINT_DEFAULT,
   KnowledgeSettingsSchema,
+  migrateKnowledgeSettings,
   type ProviderPublic,
   type ProviderSetting,
   type UpsertProviderRequest,
@@ -61,7 +62,7 @@ function readAll(): {
       providers: raw.providers?.map((p) => ProviderSettingSchema.parse(p)) ?? [],
       mcpServers: raw.mcpServers?.map((s) => McpServerSettingSchema.parse(s)) ?? [],
       langsmith: raw.langsmith ? LangsmithSettingSchema.parse(raw.langsmith) : undefined,
-      knowledge: raw.knowledge ? KnowledgeSettingsSchema.parse(raw.knowledge) : undefined,
+      knowledge: raw.knowledge ? migrateKnowledgeSettings(raw.knowledge) : undefined,
     };
   } catch (err) {
     console.error('[settings] settings.json 解析失败，忽略:', err);
@@ -323,20 +324,28 @@ export const settingsService = {
     applyLangsmithEnv({ ...s, apiKey: await secureStore.decrypt(s.apiKey) });
   },
 
-  // ---- 知识库（embedding 单独配置，与对话模型解耦） ----
+  // ---- 知识库（embedding 独立完整配置：baseURL + apiKey + 模型） ----
 
   /** 未配置时给默认值 */
   getKnowledge(): KnowledgeSettings {
-    return readAll().knowledge ?? { embeddingProviderId: null, embeddingModel: '', topK: 5 };
+    return readAll().knowledge ?? { embedding: { baseURL: '', apiKey: '', model: '' }, topK: 5 };
   },
 
-  saveKnowledge(input: unknown): KnowledgeSettings {
+  /** 保存（apiKey 留空 = 保持原值；明文写入前加密） */
+  async saveKnowledge(input: unknown): Promise<KnowledgeSettings> {
     const parsed = KnowledgeSettingsSchema.safeParse(input);
     if (!parsed.success) {
       throw httpError(400, `参数校验失败: ${parsed.error.message}`);
     }
     const settings = readAll();
-    writeAll({ ...settings, knowledge: parsed.data });
-    return parsed.data;
+    const existing = settings.knowledge?.embedding.apiKey ?? '';
+    const incomingKey = parsed.data.embedding.apiKey?.trim();
+    const apiKey = incomingKey ? await encryptIfNeeded(incomingKey) : existing;
+    const next: KnowledgeSettings = {
+      embedding: { ...parsed.data.embedding, apiKey },
+      topK: parsed.data.topK,
+    };
+    writeAll({ ...settings, knowledge: next });
+    return next;
   },
 };

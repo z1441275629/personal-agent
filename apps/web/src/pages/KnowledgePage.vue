@@ -5,18 +5,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import type {
   KnowledgeDocument,
   KnowledgeSearchResponse,
-  KnowledgeSettings,
   KnowledgeSettingsResponse,
 } from '@pa/shared';
-import { useSettingsStore } from '../stores/settings';
 import * as kb from '../api/knowledge';
 
 /**
- * 知识库页：文档管理（粘贴/导入 .txt/.md）+ embedding 设置（独立于对话模型）
- * + 试搜。embedding 未配置或失败时自动走关键词检索（CJK 2-gram）。
+ * 知识库页：文档管理（粘贴/导入 .txt/.md）+ 试搜。
+ * 检索设置（embedding 独立配置：baseURL + apiKey + 模型）收在「检索设置」对话框中。
  */
-
-const settings = useSettingsStore();
 
 // ---------- 文档列表 ----------
 const documents = ref<KnowledgeDocument[]>([]);
@@ -105,38 +101,54 @@ async function submitAdd(): Promise<void> {
   }
 }
 
-// ---------- embedding 设置（单独配置，与对话模型解耦） ----------
+// ---------- 检索设置（对话框） ----------
 const kbSettings = ref<KnowledgeSettingsResponse | null>(null);
-const embProviderId = ref<string>(''); // '' = 跟随第一个启用的
+const showSettings = ref(false);
+const embBaseURL = ref('');
 const embModel = ref('');
+const embApiKey = ref('');
 const topK = ref(5);
 const savingSettings = ref(false);
 const reindexing = ref(false);
 
-const providerOptions = computed(() => settings.providers);
+const embKeyPlaceholder = computed(() =>
+  kbSettings.value?.embedding.apiKeyMasked
+    ? `已保存 ${kbSettings.value.embedding.apiKeyMasked}，留空则保持不变`
+    : 'API Key（向量检索必填）',
+);
 
 async function loadKbSettings(): Promise<void> {
   try {
-    const s = await kb.fetchKnowledgeSettings();
-    kbSettings.value = s;
-    embProviderId.value = s.embeddingProviderId ?? '';
-    embModel.value = s.embeddingModel;
-    topK.value = s.topK;
+    kbSettings.value = await kb.fetchKnowledgeSettings();
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e));
   }
 }
 
+function openSettings(): void {
+  const s = kbSettings.value;
+  embBaseURL.value = s?.embedding.baseURL ?? '';
+  embModel.value = s?.embedding.model ?? '';
+  embApiKey.value = ''; // 不回填；留空提交 = 保持原值
+  topK.value = s?.topK ?? 5;
+  showSettings.value = true;
+}
+
 async function saveKbSettings(): Promise<void> {
   savingSettings.value = true;
   try {
-    const body: KnowledgeSettings = {
-      embeddingProviderId: embProviderId.value || null,
-      embeddingModel: embModel.value.trim(),
+    kbSettings.value = await kb.saveKnowledgeSettings({
+      embedding: {
+        baseURL: embBaseURL.value.trim(),
+        model: embModel.value.trim(),
+        apiKey: embApiKey.value.trim() || undefined,
+      },
       topK: topK.value,
-    };
-    kbSettings.value = await kb.saveKnowledgeSettings(body);
-    ElMessage.success('已保存');
+    });
+    ElMessage.success(
+      embModel.value.trim() ? '已保存（向量模式，新文档自动向量化）' : '已保存（关键词模式）',
+    );
+    showSettings.value = false;
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -147,7 +159,7 @@ async function saveKbSettings(): Promise<void> {
 async function doReindex(): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      '按当前 embedding 配置重建全部文档的向量索引？（关键词模式下不可用）',
+      '按当前 embedding 配置重建全部文档的向量索引？已导入的文档不会丢，仅重算向量。',
       '重建索引',
       { type: 'info' },
     );
@@ -159,10 +171,10 @@ async function doReindex(): Promise<void> {
     const res = await kb.reindexKnowledge();
     if (res.ok) {
       ElMessage.success(`重建完成：${res.embeddedChunks}/${res.totalChunks} 块已向量化`);
+      await loadKbSettings();
     } else {
       ElMessage.error(`重建失败：${res.error ?? '未知错误'}`);
     }
-    await loadKbSettings();
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -196,7 +208,6 @@ function fmtTime(ts: number): string {
 onMounted(() => {
   void loadDocuments();
   void loadKbSettings();
-  void settings.load();
 });
 </script>
 
@@ -204,13 +215,20 @@ onMounted(() => {
   <div class="kb-page">
     <header class="page-header">
       <h1>知识库</h1>
-      <el-button type="primary" @click="openAdd">＋ 导入文档</el-button>
+      <div class="header-actions">
+        <el-button @click="openSettings">检索设置</el-button>
+        <el-button type="primary" @click="openAdd">＋ 导入文档</el-button>
+      </div>
     </header>
 
     <p v-if="kbSettings" class="hint">
       共 {{ kbSettings.documentCount }} 篇文档 / {{ kbSettings.totalChunks }} 块切片，
       其中 {{ kbSettings.embeddedChunks }} 块已向量化。
-      {{ embModel ? `向量模型：${embModel}` : '未配置 embedding 模型，当前为关键词检索（导入文档即可用，配置后自动升级向量检索）' }}
+      {{
+        kbSettings.embedding.model
+          ? `向量模型：${kbSettings.embedding.model}`
+          : '当前为关键词检索（在「检索设置」里配置 embedding 后可升级向量检索）'
+      }}
     </p>
 
     <!-- 文档列表 -->
@@ -232,30 +250,6 @@ onMounted(() => {
         <el-button size="small" type="danger" plain @click="removeDoc(d)">删除</el-button>
       </div>
       <el-empty v-if="!documents.length && !loading" description="还没有文档。点右上角「导入文档」，粘贴文本或选择 .txt / .md 文件" />
-    </section>
-
-    <!-- embedding 设置 -->
-    <section class="settings-section">
-      <h2>检索设置</h2>
-      <p class="hint">
-        embedding 单独配置，不影响对话模型：选任意 provider + 填该服务的 embedding 模型名
-        （如 doubao-embedding-250415 / text-embedding-3-small）。留空则用关键词检索。
-      </p>
-      <div class="kb-form">
-        <el-select v-model="embProviderId" class="provider-select" title="embedding 使用的模型服务">
-          <el-option label="跟随第一个启用的服务" value="" />
-          <el-option
-            v-for="p in providerOptions"
-            :key="p.id"
-            :label="`${p.name}${p.enabled ? '' : '（已停用）'}`"
-            :value="p.id"
-          />
-        </el-select>
-        <el-input v-model="embModel" placeholder="embedding 模型名（留空 = 关键词检索）" class="model-input" />
-        <el-input-number v-model="topK" :min="1" :max="20" controls-position="right" title="检索返回条数" />
-        <el-button type="primary" :loading="savingSettings" @click="saveKbSettings">保存</el-button>
-        <el-button :loading="reindexing" @click="doReindex" title="切换 embedding 模型后重建向量">重建索引</el-button>
-      </div>
     </section>
 
     <!-- 试搜 -->
@@ -309,6 +303,39 @@ onMounted(() => {
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 检索设置对话框 -->
+    <el-dialog v-model="showSettings" title="检索设置" width="520px">
+      <el-form label-width="90px">
+        <el-form-item label="Base URL">
+          <el-input v-model="embBaseURL" placeholder="https://.../v3（openai 兼容接口）" />
+        </el-form-item>
+        <el-form-item label="模型">
+          <el-input v-model="embModel" placeholder="如 doubao-embedding-250415（留空 = 关键词检索）" />
+        </el-form-item>
+        <el-form-item label="API Key">
+          <el-input
+            v-model="embApiKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="embKeyPlaceholder"
+          />
+        </el-form-item>
+        <el-form-item label="返回条数">
+          <el-input-number v-model="topK" :min="1" :max="20" controls-position="right" />
+        </el-form-item>
+      </el-form>
+      <p class="hint">
+        embedding 独立于对话模型，三项配置齐全才启用向量检索，之后导入的文档会自动向量化，
+        存量文档需点「重建索引」。{{ kbSettings?.embedding.storage === 'encrypted' ? 'API Key 已加密存储。' : '' }}
+      </p>
+      <template #footer>
+        <el-button @click="showSettings = false">取消</el-button>
+        <el-button :loading="reindexing" title="按当前配置重算全部文档向量" @click="doReindex">重建索引</el-button>
+        <el-button type="primary" :loading="savingSettings" @click="saveKbSettings">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -324,6 +351,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 .hint {
   color: #888;
@@ -374,26 +405,18 @@ onMounted(() => {
   color: #999;
   font-size: 12px;
 }
-.settings-section,
 .search-section {
   margin-top: 32px;
 }
-.settings-section h2,
 .search-section h2 {
   font-size: 17px;
-  margin: 0 0 4px;
+  margin: 0 0 8px;
 }
 .kb-form {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-}
-.provider-select {
-  width: 220px;
-}
-.model-input {
-  width: 280px;
 }
 .search-results {
   margin-top: 12px;

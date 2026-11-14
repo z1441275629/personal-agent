@@ -39,16 +39,25 @@ export const KnowledgeSearchResponseSchema = z.object({
 });
 export type KnowledgeSearchResponse = z.infer<typeof KnowledgeSearchResponseSchema>;
 
-/** GET /api/knowledge/settings —— 附统计，设置页一屏展示 */
+/** GET /api/knowledge/settings —— 附统计与掩码，设置页一屏展示 */
 export const KnowledgeSettingsResponseSchema = KnowledgeSettingsSchema.extend({
+  embedding: KnowledgeSettingsSchema.shape.embedding.extend({
+    apiKeyMasked: z.string(),
+    /** 存储形态：encrypted=safeStorage 密文（桌面模式）/ plaintext=明文（开发模式） */
+    storage: z.enum(['encrypted', 'plaintext']),
+  }),
   documentCount: z.number().int(),
   totalChunks: z.number().int(),
   embeddedChunks: z.number().int(),
 });
 export type KnowledgeSettingsResponse = z.infer<typeof KnowledgeSettingsResponseSchema>;
 
-/** PUT /api/knowledge/settings */
-export const UpsertKnowledgeSettingsRequestSchema = KnowledgeSettingsSchema;
+/** PUT /api/knowledge/settings —— apiKey 留空/缺省 = 保持原值 */
+export const UpsertKnowledgeSettingsRequestSchema = KnowledgeSettingsSchema.extend({
+  embedding: KnowledgeSettingsSchema.shape.embedding.extend({
+    apiKey: z.string().optional(),
+  }),
+});
 export type UpsertKnowledgeSettingsRequest = z.infer<typeof UpsertKnowledgeSettingsRequestSchema>;
 
 /** POST /api/knowledge/reindex —— 按当前 embedding 配置重建全部向量 */

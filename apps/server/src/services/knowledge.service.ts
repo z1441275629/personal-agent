@@ -6,16 +6,17 @@ import type {
   KnowledgeSearchResponse,
   KnowledgeSettings,
   KnowledgeSettingsResponse,
-  ProviderSetting,
 } from '@pa/shared';
 import { settingsService } from './settings.service';
+import { secureStore } from './secure-store';
 
 /**
  * 知识库（RAG）：文档摄取 → 切分 → 向量化（可选）→ 检索。
  *
  * 向量方案：SQLite 内嵌 Float32 BLOB + JS 余弦暴力扫（个人规模千级切片，
- * 无外部向量库依赖）。embedding 单独配置（provider + 模型），失败或未配置
- * 时降级关键词检索（CJK 2-gram），功能始终可用。
+ * 无外部向量库依赖）。embedding 为独立完整配置（baseURL + apiKey + 模型），
+ * 三项齐全才启用向量；失败或未配置时降级关键词检索（CJK 2-gram），
+ * 摄取与检索永不失败。
  */
 
 /** 单次 embed 批量上限（openai 兼容接口的稳妥批量） */
@@ -28,13 +29,15 @@ function httpError(status: number, message: string): Error {
   return err;
 }
 
-/** 解析 embedding 用的 provider：显式 id（含停用）优先，缺省跟第一个启用的 */
-async function resolveEmbedProvider(settings: KnowledgeSettings): Promise<ProviderSetting | null> {
-  const all = await settingsService.listFull();
-  if (settings.embeddingProviderId) {
-    return all.find((p) => p.id === settings.embeddingProviderId) ?? null;
-  }
-  return all.find((p) => p.enabled) ?? null;
+/** embedding 端点（解密后的明文 key；任一项缺失返回 null = 关键词模式） */
+async function resolveEmbedEndpoint(
+  settings: KnowledgeSettings,
+): Promise<{ baseURL: string; apiKey: string; model: string } | null> {
+  const e = settings.embedding;
+  if (!e.model.trim() || !e.baseURL.trim() || !e.apiKey) return null;
+  const apiKey = await secureStore.decrypt(e.apiKey);
+  if (!apiKey) return null;
+  return { baseURL: e.baseURL.trim(), apiKey, model: e.model.trim() };
 }
 
 export interface IngestResult {
@@ -56,19 +59,15 @@ export const knowledgeService = {
     let warning: string | null = null;
     let embeddingModel: string | null = null;
     let vectors: Float32Array[] | null = null;
-    if (settings.embeddingModel) {
-      const provider = await resolveEmbedProvider(settings);
-      if (!provider) {
-        warning = '未找到可用的 embedding provider，已按关键词模式入库';
-      } else {
-        try {
-          vectors = await embedAll(provider, settings.embeddingModel, chunks);
-          embeddingModel = settings.embeddingModel;
-        } catch (err) {
-          warning = `向量化失败（${
-            err instanceof Error ? err.message : String(err)
-          }），已按关键词模式入库；可在设置中修正后点「重建索引」`;
-        }
+    const endpoint = await resolveEmbedEndpoint(settings);
+    if (endpoint) {
+      try {
+        vectors = await embedAll(endpoint, endpoint.model, chunks);
+        embeddingModel = endpoint.model;
+      } catch (err) {
+        warning = `向量化失败（${
+          err instanceof Error ? err.message : String(err)
+        }），已按关键词模式入库；可在「检索设置」中修正后重建索引`;
       }
     }
 
@@ -91,8 +90,8 @@ export const knowledgeService = {
   },
 
   /**
-   * 检索：当前模型已向量的切片走余弦；未配置/无向量切片/查询向量化失败
-   * 一律降级关键词打分。返回带实际使用的 mode。
+   * 检索：embedding 配置齐全且切片已向量化时走余弦；
+   * 未配置/无向量切片/查询向量化失败一律降级关键词打分。
    */
   async search(query: string, topK?: number): Promise<KnowledgeSearchResponse> {
     const settings = settingsService.getKnowledge();
@@ -100,36 +99,34 @@ export const knowledgeService = {
     const all = knowledgeRepo.allChunks();
     if (!all.length) return { mode: 'keyword', results: [] };
 
-    if (settings.embeddingModel) {
+    const endpoint = await resolveEmbedEndpoint(settings);
+    if (endpoint) {
       const candidates = all.filter(
-        (c) => c.docEmbeddingModel === settings.embeddingModel && c.embedding,
+        (c) => c.docEmbeddingModel === endpoint.model && c.embedding,
       );
       if (candidates.length) {
-        const provider = await resolveEmbedProvider(settings);
-        if (provider) {
-          try {
-            const [qv] = await embedAll(provider, settings.embeddingModel, [query]);
-            if (qv) {
-              return {
-                mode: 'vector',
-                results: candidates
-                  .map((c) => ({
-                    docId: c.docId,
-                    docName: c.docName,
-                    chunkIndex: c.idx,
-                    text: c.content,
-                    score: cosineSimilarity(qv, c.embedding!),
-                  }))
-                  .sort((a, b) => b.score - a.score)
-                  .slice(0, k),
-              };
-            }
-          } catch (err) {
-            console.warn(
-              '[knowledge] 查询向量化失败，降级关键词检索:',
-              err instanceof Error ? err.message : err,
-            );
+        try {
+          const [qv] = await embedAll(endpoint, endpoint.model, [query]);
+          if (qv) {
+            return {
+              mode: 'vector',
+              results: candidates
+                .map((c) => ({
+                  docId: c.docId,
+                  docName: c.docName,
+                  chunkIndex: c.idx,
+                  text: c.content,
+                  score: cosineSimilarity(qv, c.embedding!),
+                }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, k),
+            };
           }
+        } catch (err) {
+          console.warn(
+            '[knowledge] 查询向量化失败，降级关键词检索:',
+            err instanceof Error ? err.message : err,
+          );
         }
       }
     }
@@ -153,13 +150,9 @@ export const knowledgeService = {
   /** 按当前 embedding 配置重建全部文档的向量索引 */
   async reindex(): Promise<{ ok: boolean; embeddedChunks: number; totalChunks: number; error: string | null }> {
     const { totalChunks } = knowledgeRepo.stats();
-    const settings = settingsService.getKnowledge();
-    if (!settings.embeddingModel) {
-      return { ok: false, embeddedChunks: 0, totalChunks, error: '未配置 embedding 模型' };
-    }
-    const provider = await resolveEmbedProvider(settings);
-    if (!provider) {
-      return { ok: false, embeddedChunks: 0, totalChunks, error: '未找到可用的 embedding provider' };
+    const endpoint = await resolveEmbedEndpoint(settingsService.getKnowledge());
+    if (!endpoint) {
+      return { ok: false, embeddedChunks: 0, totalChunks, error: 'embedding 未配置完整（需 baseURL、API Key、模型名）' };
     }
     let embedded = 0;
     try {
@@ -168,10 +161,10 @@ export const knowledgeService = {
           .allChunks()
           .filter((c) => c.docId === doc.id)
           .sort((a, b) => a.idx - b.idx);
-        const vectors = await embedAll(provider, settings.embeddingModel, chunks.map((c) => c.content));
+        const vectors = await embedAll(endpoint, endpoint.model, chunks.map((c) => c.content));
         knowledgeRepo.updateDocEmbeddings(
           doc.id,
-          settings.embeddingModel,
+          endpoint.model,
           chunks.map((c, i) => ({ idx: c.idx, embedding: vectors[i] ?? null })),
         );
         embedded += vectors.length;
@@ -183,18 +176,22 @@ export const knowledgeService = {
     }
   },
 
-  /** 设置 + 统计（设置页一屏展示） */
+  /** 设置 + 统计 + 掩码（设置对话框展示） */
   async getSettingsView(): Promise<KnowledgeSettingsResponse> {
     const settings = settingsService.getKnowledge();
     const stats = knowledgeRepo.stats();
-    // provider 可能已删除 → 置空提示
-    if (settings.embeddingProviderId) {
-      const all = await settingsService.listFull();
-      if (!all.some((p) => p.id === settings.embeddingProviderId)) {
-        settings.embeddingProviderId = null;
-      }
-    }
-    return { ...settings, ...stats };
+    const key = await secureStore.decrypt(settings.embedding.apiKey);
+    return {
+      embedding: {
+        baseURL: settings.embedding.baseURL,
+        model: settings.embedding.model,
+        apiKey: '',
+        apiKeyMasked: key ? maskKey(key) : '',
+        storage: secureStore.encrypted ? 'encrypted' : 'plaintext',
+      },
+      topK: settings.topK,
+      ...stats,
+    };
   },
 
   /** 文档名列表（system prompt 引导模型用） */
@@ -203,16 +200,21 @@ export const knowledgeService = {
   },
 };
 
+/** sk-very-long-key-abcd → sk-***abcd（同 settings.service 约定） */
+function maskKey(key: string): string {
+  return key.length <= 8 ? '***' : `${key.slice(0, 3)}***${key.slice(-4)}`;
+}
+
 /** 分批 embed，返回与输入同序的向量 */
 async function embedAll(
-  provider: ProviderSetting,
+  endpoint: { baseURL: string; apiKey: string },
   model: string,
   texts: string[],
 ): Promise<Float32Array[]> {
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += EMBED_BATCH) {
     const batch = texts.slice(i, i + EMBED_BATCH);
-    const vectors = await embedTexts(provider, model, batch);
+    const vectors = await embedTexts(endpoint, model, batch);
     out.push(...vectors.map((v) => Float32Array.from(v)));
   }
   return out;
