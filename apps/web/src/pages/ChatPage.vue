@@ -101,6 +101,17 @@ function onKeydown(e: KeyboardEvent): void {
           <div class="text">{{ m.content }}</div>
         </div>
 
+        <!-- 本轮工具调用步骤（agent 执行过程，不持久化） -->
+        <div v-if="chat.toolSteps.length" class="tool-steps">
+          <div v-for="s in chat.toolSteps" :key="s.toolCallId" class="tool-step" :title="s.input">
+            <span class="tool-name">🔧 {{ s.name }}</span>
+            <span v-if="s.ok === undefined" class="tool-status">执行中…</span>
+            <span v-else class="tool-status" :class="s.ok ? 'ok' : 'fail'">
+              {{ s.ok ? '✓ ' : '✗ ' }}{{ s.output }}
+            </span>
+          </div>
+        </div>
+
         <div v-if="chat.streaming" class="bubble assistant">
           <div class="who">助手</div>
           <div class="text">
@@ -255,6 +266,40 @@ function onKeydown(e: KeyboardEvent): void {
   padding: 8px 12px;
   font-size: 13px;
   max-width: 80%;
+}
+.tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: flex-start;
+  max-width: 72%;
+}
+.tool-step {
+  font-size: 12px;
+  color: #888;
+  background: #f7f8fa;
+  border: 1px dashed #e3e5ea;
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.tool-name {
+  color: #557;
+  flex-shrink: 0;
+}
+.tool-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-status.ok {
+  color: #16774a;
+}
+.tool-status.fail {
+  color: #b33;
 }
 .composer {
   display: flex;

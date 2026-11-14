@@ -64,4 +64,16 @@ export const conversationsRepo = {
   softRemove(id: string): void {
     getDb().prepare('UPDATE conversations SET deleted_at = ? WHERE id = ?').run(Date.now(), id);
   },
+
+  /** 上下文压缩产生的滚动摘要（供下轮注入 system prompt） */
+  getSummary(id: string): string | null {
+    const row = getDb()
+      .prepare('SELECT summary FROM conversations WHERE id = ?')
+      .get(id) as { summary: unknown } | undefined;
+    return row && row.summary != null ? String(row.summary) : null;
+  },
+
+  setSummary(id: string, summary: string): void {
+    getDb().prepare('UPDATE conversations SET summary = ? WHERE id = ?').run(summary, id);
+  },
 };

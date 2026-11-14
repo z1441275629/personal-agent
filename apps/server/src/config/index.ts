@@ -12,6 +12,8 @@ const EnvSchema = z.object({
   DATA_DIR: z.string().default('./data'),
   /** web 构建产物目录（生产模式由 desktop 的 server-manager 注入） */
   WEB_DIST_DIR: z.string().optional(),
+  /** 上下文预算：对话历史超过该字符数时触发滚动摘要压缩 */
+  CONTEXT_BUDGET_CHARS: z.coerce.number().int().positive().default(12_000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

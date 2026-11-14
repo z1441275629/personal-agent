@@ -30,6 +30,21 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 export const ChatStreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('meta'), conversationId: z.string(), userMessageId: z.string() }),
   z.object({ type: z.literal('chunk'), text: z.string() }),
+  /** agent 工具调用开始（input 为参数 JSON 字符串，展示用） */
+  z.object({
+    type: z.literal('tool_start'),
+    toolCallId: z.string(),
+    name: z.string(),
+    input: z.string(),
+  }),
+  /** agent 工具调用结束（output 截断到 200 字，展示用） */
+  z.object({
+    type: z.literal('tool_result'),
+    toolCallId: z.string(),
+    name: z.string(),
+    ok: z.boolean(),
+    output: z.string(),
+  }),
   z.object({ type: z.literal('done'), assistantMessageId: z.string() }),
   z.object({ type: z.literal('error'), message: z.string() }),
 ]);

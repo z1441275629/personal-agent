@@ -7,11 +7,61 @@ import type {
   ProviderPublic,
   TestConnectionResponse,
   UpsertProviderRequest,
+  Memory,
+  MemoryType,
 } from '@pa/shared';
+import { MEMORY_TYPE_LABELS } from '@pa/shared';
 import { useSettingsStore } from '../stores/settings';
+import * as memoriesApi from '../api/memories';
 
 const store = useSettingsStore();
-onMounted(() => void store.load());
+onMounted(() => {
+  void store.load();
+  void loadMemories();
+});
+
+// ---------- Agent 记忆 ----------
+const memories = ref<Memory[]>([]);
+const memoryContent = ref('');
+const memoryType = ref<MemoryType>('fact');
+const addingMemory = ref(false);
+
+async function loadMemories(): Promise<void> {
+  try {
+    memories.value = await memoriesApi.fetchMemories();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function addMemory(): Promise<void> {
+  const content = memoryContent.value.trim();
+  if (!content) return;
+  addingMemory.value = true;
+  try {
+    await memoriesApi.createMemory({ content, type: memoryType.value });
+    memoryContent.value = '';
+    ElMessage.success('已添加记忆');
+    await loadMemories();
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    addingMemory.value = false;
+  }
+}
+
+async function removeMemory(m: Memory): Promise<void> {
+  try {
+    await ElMessageBox.confirm(`删除这条记忆？\n「${m.content.slice(0, 40)}」`, '删除确认', {
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  await memoriesApi.deleteMemory(m.id);
+  ElMessage.success('已删除');
+  await loadMemories();
+}
 
 // ---------- 列表 ----------
 type TestState = 'loading' | TestConnectionResponse;
@@ -239,6 +289,40 @@ async function submit(): Promise<void> {
     </section>
     <el-empty v-else-if="!store.loading" description="还没有配置任何模型服务，点右上角「添加 Provider」开始" />
 
+    <!-- Agent 记忆 -->
+    <section class="memory-section">
+      <h2>Agent 记忆</h2>
+      <p class="hint">跨会话保留的用户信息，每次对话自动注入给助理；也可以直接在这里手动管理。</p>
+
+      <div class="memory-form">
+        <el-select v-model="memoryType" class="memory-type" title="记忆类型">
+          <el-option label="事实" value="fact" />
+          <el-option label="偏好" value="preference" />
+          <el-option label="笔记" value="note" />
+        </el-select>
+        <el-input
+          v-model="memoryContent"
+          maxlength="2000"
+          placeholder="添加一条记忆，如：用户养了一只猫叫雪球"
+          @keydown.enter.prevent="addMemory"
+        />
+        <el-button type="primary" :loading="addingMemory" :disabled="!memoryContent.trim()" @click="addMemory">
+          添加
+        </el-button>
+      </div>
+
+      <div v-if="memories.length" class="memory-list">
+        <div v-for="m in memories" :key="m.id" class="memory-item">
+          <el-tag size="small" effect="plain" :type="m.type === 'preference' ? 'warning' : 'info'">
+            {{ MEMORY_TYPE_LABELS[m.type] }}
+          </el-tag>
+          <span class="memory-content">{{ m.content }}</span>
+          <el-button size="small" text type="danger" @click="removeMemory(m)">删除</el-button>
+        </div>
+      </div>
+      <p v-else class="hint">还没有记忆。对助理说"帮我记住…"，它自己就会存进来。</p>
+    </section>
+
     <!-- 表单 -->
     <el-dialog
       v-model="showForm"
@@ -373,5 +457,52 @@ async function submit(): Promise<void> {
 .banner.error {
   background: #fdecec;
   color: #b33;
+}
+.memory-section {
+  margin-top: 40px;
+}
+.memory-section h2 {
+  font-size: 17px;
+  margin: 0 0 4px;
+}
+.hint {
+  color: #888;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.memory-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.memory-type {
+  width: 96px;
+  flex-shrink: 0;
+}
+.memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.memory-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 0;
+}
+.memory-item .el-tag {
+  flex-shrink: 0;
+}
+.memory-content {
+  flex: 1;
+  font-size: 13px;
+  color: #444;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

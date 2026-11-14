@@ -2,18 +2,53 @@ import path from 'node:path';
 import {
   conversationsRepo,
   initDb,
+  memoriesRepo,
   messagesRepo,
 } from '@pa/persistence';
-import { streamChat } from '@pa/llm';
-import type { ChatStreamEvent, Conversation, Message, ProviderSetting } from '@pa/shared';
+import { runAgentLoop } from '@pa/agents';
+import {
+  buildSummarizePrompt,
+  buildSystemPrompt,
+  streamChat,
+} from '@pa/llm';
+import { needsCompression, selectMemories, splitForCompression } from '@pa/memory';
+import type {
+  ChatStreamEvent,
+  Conversation,
+  Message,
+  ProviderSetting,
+} from '@pa/shared';
 import { env } from '../config';
 import { settingsService } from './settings.service';
+import { buildAgentTools } from './agent-tools.service';
 
 /** 与 settings.service 一致的 HTTP 错误约定（errorHandler 读 .status） */
 function httpError(status: number, message: string): Error {
   const err = new Error(message) as Error & { status: number };
   err.status = status;
   return err;
+}
+
+/** 摘要长度上限（字符） */
+const SUMMARY_MAX_CHARS = 2_000;
+
+/** 早期对话 → 滚动摘要（合并已有摘要），LLM 生成 */
+async function summarizeHistory(
+  provider: ProviderSetting,
+  messages: Message[],
+  previousSummary: string | null,
+): Promise<string> {
+  const transcript = messages
+    .map((m) => `${m.role === 'user' ? '用户' : '助理'}: ${m.content}`)
+    .join('\n');
+  const prompt = `${buildSummarizePrompt(previousSummary)}\n\n对话历史：\n${transcript}`;
+  let out = '';
+  for await (const text of streamChat(provider, [
+    { id: 'summarize', conversationId: 'summarize', role: 'user', content: prompt, createdAt: Date.now() },
+  ])) {
+    out += text;
+  }
+  return out.trim().slice(0, SUMMARY_MAX_CHARS);
 }
 
 export const chatService = {
@@ -63,8 +98,9 @@ export const chatService = {
   },
 
   /**
-   * 流式回复：先落用户消息，逐段产出模型输出，完成后落 assistant 消息。
-   * 调用方（SSE 路由）需先完成 getConversation / resolveProvider 校验。
+   * Agent 流式回复：落用户消息 → 上下文压缩（超预算时）→ 记忆注入 →
+   * LangChain agent 工具循环 → 落最终 assistant 文本。
+   * 工具中间过程（tool_start/tool_result）透传给 SSE，但不持久化。
    */
   async *streamReply(
     conversation: Conversation,
@@ -80,12 +116,47 @@ export const chatService = {
     conversationsRepo.touch(conversation.id);
     yield { type: 'meta', conversationId: conversation.id, userMessageId: userMsg.id };
 
+    // ---- ① 上下文管理：超预算时把早期消息压成滚动摘要，仅发最近部分 ----
     const history = messagesRepo.listByConversation(conversation.id);
+    let summary = conversationsRepo.getSummary(conversation.id);
+    let llmHistory = history;
+    if (needsCompression(history, { maxChars: env.CONTEXT_BUDGET_CHARS, keepRecent: 6 })) {
+      const { toSummarize, recent } = splitForCompression(history, {
+        maxChars: env.CONTEXT_BUDGET_CHARS,
+        keepRecent: 6,
+      });
+      if (toSummarize.length) {
+        try {
+          summary = await summarizeHistory(provider, toSummarize, summary);
+          conversationsRepo.setSummary(conversation.id, summary);
+          llmHistory = recent;
+        } catch {
+          // 摘要失败不阻塞对话：按原样发送全量历史
+        }
+      }
+    }
+
+    // ---- ② 记忆注入 + system prompt ----
+    const memories = selectMemories(memoriesRepo.list(), content);
+    const systemPrompt = buildSystemPrompt({ memories, summary });
+
+    // ---- ③ LangChain agent 工具循环 ----
     let full = '';
     try {
-      for await (const text of streamChat(provider, history)) {
-        full += text;
-        yield { type: 'chunk', text };
+      const events = runAgentLoop({
+        provider,
+        systemPrompt,
+        history: llmHistory,
+        tools: buildAgentTools(conversation.id),
+      });
+      for await (const evt of events) {
+        if (evt.type === 'chunk') {
+          full += evt.text;
+          yield { type: 'chunk', text: evt.text };
+        } else {
+          // tool_start / tool_result 直接透传
+          yield evt;
+        }
       }
     } catch (err) {
       yield {
@@ -95,7 +166,11 @@ export const chatService = {
       return;
     }
 
-    const assistantMsg = messagesRepo.create(conversation.id, 'assistant', full);
+    const assistantMsg = messagesRepo.create(
+      conversation.id,
+      'assistant',
+      full || '（本轮没有文本输出）',
+    );
     conversationsRepo.touch(conversation.id);
     yield { type: 'done', assistantMessageId: assistantMsg.id };
   },

@@ -22,7 +22,7 @@ export function toLangChainMessages(messages: Message[]): BaseMessage[] {
 }
 
 /** 兼容 string / content blocks 两种 chunk 内容形态，抽取纯文本 */
-function chunkText(content: unknown): string {
+export function chunkText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content

@@ -8,3 +8,4 @@ export { tasksRepo } from './repositories/tasks';
 export type { TaskUpdate } from './repositories/tasks';
 export { notificationsRepo } from './repositories/notifications';
 export type { NotificationDraft } from './repositories/notifications';
+export { memoriesRepo } from './repositories/memories';

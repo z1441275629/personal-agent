@@ -20,7 +20,8 @@ export function initDb(dataDir: string): DatabaseSync {
       title      TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      deleted_at INTEGER
+      deleted_at INTEGER,
+      summary    TEXT
     );
     CREATE TABLE IF NOT EXISTS messages (
       id              TEXT PRIMARY KEY,
@@ -54,11 +55,23 @@ export function initDb(dataDir: string): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_notifications_created
       ON notifications(created_at DESC);
+    CREATE TABLE IF NOT EXISTS memories (
+      id                    TEXT PRIMARY KEY,
+      content               TEXT NOT NULL,
+      type                  TEXT NOT NULL,
+      source_conversation_id TEXT,
+      created_at            INTEGER NOT NULL,
+      updated_at            INTEGER NOT NULL
+    );
   `);
-  // 迁移：旧库 conversations 表没有 deleted_at（软删除标记）时补列，存量数据不动
+  // 迁移：旧库 conversations 表逐列补齐（软删除标记 / 滚动摘要），存量数据不动
   const columns = db.prepare('PRAGMA table_info(conversations)').all() as unknown as { name: string }[];
-  if (!columns.some((c) => c.name === 'deleted_at')) {
+  const columnNames = new Set(columns.map((c) => c.name));
+  if (!columnNames.has('deleted_at')) {
     db.exec('ALTER TABLE conversations ADD COLUMN deleted_at INTEGER');
+  }
+  if (!columnNames.has('summary')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN summary TEXT');
   }
   return db;
 }

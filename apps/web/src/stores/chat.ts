@@ -11,6 +11,15 @@ export const useChatStore = defineStore('chat', () => {
   const error = ref<string | null>(null);
   /** 正在流式生成的 assistant 文本（渲染用） */
   const streamingText = ref('');
+  /** 本轮工具调用步骤（渲染用，不持久化） */
+  const toolSteps = ref<{ toolCallId: string; name: string; input: string; ok?: boolean; output?: string }[]>([]);
+  /** 正在进行的流式请求（切换会话时中断前端消费；服务端照常落库） */
+  let inflight: AbortController | null = null;
+
+  function abortInflight(): void {
+    inflight?.abort();
+    inflight = null;
+  }
 
   async function loadConversations(): Promise<void> {
     conversations.value = await api.fetchConversations();
@@ -18,16 +27,20 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 新会话：纯本地草稿，不落库；发首条消息时才由服务端创建 */
   function startNewChat(): void {
+    abortInflight();
     activeId.value = null;
     messages.value = [];
     error.value = null;
     streamingText.value = '';
+    toolSteps.value = [];
   }
 
   async function select(id: string): Promise<void> {
+    abortInflight();
     activeId.value = id;
     error.value = null;
     streamingText.value = '';
+    toolSteps.value = [];
     messages.value = await api.fetchMessages(id);
   }
 
@@ -52,6 +65,7 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null;
     streaming.value = true;
     streamingText.value = '';
+    toolSteps.value = [];
     messages.value = [
       ...messages.value,
       {
@@ -64,18 +78,33 @@ export const useChatStore = defineStore('chat', () => {
     ];
 
     try {
+      inflight = new AbortController();
       let assistantId: string | null = null;
-      for await (const evt of api.sendMessage({
-        content,
-        providerId,
-        conversationId: convId ?? undefined,
-      })) {
+      for await (const evt of api.sendMessage(
+        {
+          content,
+          providerId,
+          conversationId: convId ?? undefined,
+        },
+        inflight.signal,
+      )) {
         if (evt.type === 'meta') {
           activeId.value = evt.conversationId;
           // 草稿转正：立刻刷新侧栏（此时已带自动标题）
           void loadConversations();
         } else if (evt.type === 'chunk') {
           streamingText.value += evt.text;
+        } else if (evt.type === 'tool_start') {
+          toolSteps.value = [
+            ...toolSteps.value,
+            { toolCallId: evt.toolCallId, name: evt.name, input: evt.input },
+          ];
+        } else if (evt.type === 'tool_result') {
+          toolSteps.value = toolSteps.value.map((s) =>
+            s.toolCallId === evt.toolCallId
+              ? { ...s, ok: evt.ok, output: evt.output }
+              : s,
+          );
         } else if (evt.type === 'done') {
           assistantId = evt.assistantMessageId;
         } else if (evt.type === 'error') {
@@ -88,10 +117,15 @@ export const useChatStore = defineStore('chat', () => {
         await loadConversations();
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      // 切换会话主动中断：静默收尾，不当作错误
+      if ((e as { name?: string })?.name !== 'AbortError') {
+        error.value = e instanceof Error ? e.message : String(e);
+      }
     } finally {
+      inflight = null;
       streaming.value = false;
       streamingText.value = '';
+      // toolSteps 保留到切换会话/下一轮发送（同会话内可回看本轮工具轨迹）
     }
   }
 
@@ -101,6 +135,7 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     streaming,
     streamingText,
+    toolSteps,
     error,
     loadConversations,
     startNewChat,

@@ -45,6 +45,9 @@ importers:
       '@koa/router':
         specifier: ^15.7.1
         version: 15.7.1(koa@3.3.0)(supports-color@7.2.0)
+      '@langchain/core':
+        specifier: ^1.4.1
+        version: 1.4.1(@opentelemetry/api@1.10.0)(openai@7.56.0(undici@7.30.2)(ws@8.23.0)(zod@4.6.7))(ws@8.23.0)
       '@pa/agents':
         specifier: workspace:*
         version: link:../../packages/agents

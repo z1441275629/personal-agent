@@ -8,13 +8,14 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "bundle": "esbuild src/main.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/server.cjs",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/server.cjs && node scripts/fix-import-meta.cjs dist/server.cjs",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@koa/bodyparser": "^6.1.0",
     "@koa/cors": "^5.0.0",
     "@koa/router": "^15.7.1",
+    "@langchain/core": "^1.4.1",
     "@pa/agents": "workspace:*",
     "@pa/guardrails": "workspace:*",
     "@pa/infra": "workspace:*",

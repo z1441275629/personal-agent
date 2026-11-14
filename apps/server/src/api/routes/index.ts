@@ -4,6 +4,7 @@ import { settingsRouter } from './settings';
 import { chatRouter } from './chat';
 import { tasksRouter } from './tasks';
 import { notificationsRouter } from './notifications';
+import { memoriesRouter } from './memories';
 
 /**
  * 路由汇总挂载。所有业务路由统一加 /api 前缀（web 端 vite proxy 已配置）。
@@ -19,3 +20,4 @@ rootRouter.use(settingsRouter.routes(), settingsRouter.allowedMethods());
 rootRouter.use(chatRouter.routes(), chatRouter.allowedMethods());
 rootRouter.use(tasksRouter.routes(), tasksRouter.allowedMethods());
 rootRouter.use(notificationsRouter.routes(), notificationsRouter.allowedMethods());
+rootRouter.use(memoriesRouter.routes(), memoriesRouter.allowedMethods());
