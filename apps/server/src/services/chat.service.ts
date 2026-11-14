@@ -48,7 +48,7 @@ export const chatService = {
 
   /** 解析本次对话使用的 provider（指定 id 或第一个启用的） */
   resolveProvider(providerId?: string): ProviderSetting {
-    const enabled = settingsService.list().filter((p) => p.enabled);
+    const enabled = settingsService.listFull().filter((p) => p.enabled);
     if (providerId) {
       const found = enabled.find((p) => p.id === providerId);
       if (!found) throw httpError(400, `provider 不存在或未启用: ${providerId}`);

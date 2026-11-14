@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import type {
-  CreateProviderRequest,
   ProviderProtocol,
-  ProviderSetting,
+  ProviderPublic,
   TestConnectionResponse,
+  UpsertProviderRequest,
 } from '@pa/shared';
 import { useSettingsStore } from '../stores/settings';
 
@@ -15,7 +15,7 @@ onMounted(() => void store.load());
 type TestState = 'loading' | TestConnectionResponse;
 const testing = ref<Record<string, TestState>>({});
 
-function presetLabel(p: ProviderSetting): string {
+function presetLabel(p: ProviderPublic): string {
   return store.presets.find((x) => x.id === p.presetId)?.label ?? p.presetId;
 }
 
@@ -40,7 +40,7 @@ function testError(id: string): string {
   return t !== undefined && t !== 'loading' ? (t.error ?? '') : '';
 }
 
-async function doTest(p: ProviderSetting): Promise<void> {
+async function doTest(p: ProviderPublic): Promise<void> {
   testing.value = { ...testing.value, [p.id]: 'loading' };
   try {
     testing.value = { ...testing.value, [p.id]: await store.test(p.id) };
@@ -52,7 +52,7 @@ async function doTest(p: ProviderSetting): Promise<void> {
   }
 }
 
-async function doRemove(p: ProviderSetting): Promise<void> {
+async function doRemove(p: ProviderPublic): Promise<void> {
   if (!window.confirm(`删除 provider「${p.name}」？`)) return;
   if (editingId.value === p.id) closeForm();
   await store.remove(p.id);
@@ -61,6 +61,8 @@ async function doRemove(p: ProviderSetting): Promise<void> {
 // ---------- 表单 ----------
 const showForm = ref(false);
 const editingId = ref<string | null>(null);
+/** 编辑中已有 key 的掩码（展示用，绝不回填真实 key） */
+const editingMasked = ref('');
 
 const form = reactive({
   presetId: 'openai',
@@ -73,6 +75,11 @@ const form = reactive({
 });
 
 const currentPreset = computed(() => store.presets.find((p) => p.id === form.presetId));
+const apiKeyPlaceholder = computed(() =>
+  editingId.value
+    ? `已保存 ${editingMasked.value}，留空则保持不变`
+    : (currentPreset.value?.apiKeyHint ?? 'API Key'),
+);
 
 function onPresetChange(): void {
   const preset = currentPreset.value;
@@ -85,6 +92,7 @@ function onPresetChange(): void {
 
 function openCreate(): void {
   editingId.value = null;
+  editingMasked.value = '';
   Object.assign(form, {
     presetId: 'openai',
     name: '',
@@ -98,14 +106,16 @@ function openCreate(): void {
   showForm.value = true;
 }
 
-function openEdit(p: ProviderSetting): void {
+function openEdit(p: ProviderPublic): void {
   editingId.value = p.id;
+  editingMasked.value = p.apiKeyMasked;
   Object.assign(form, {
     presetId: p.presetId,
     name: p.name,
     protocol: p.protocol,
     baseURL: p.baseURL,
-    apiKey: p.apiKey,
+    // 不回填真实 key：留空提交 = 保持原值
+    apiKey: '',
     model: p.model,
     enabled: p.enabled,
   });
@@ -122,13 +132,22 @@ const formError = ref<string | null>(null);
 
 async function submit(): Promise<void> {
   formError.value = null;
-  if (!form.name.trim() || !form.baseURL || !form.apiKey || !form.model.trim()) {
-    formError.value = '请完整填写：名称 / baseURL / API Key / 模型';
+  // 编辑时 apiKey 可留空（保持原值）；创建时必填
+  const needKey = !editingId.value && !form.apiKey.trim();
+  if (!form.name.trim() || !form.baseURL || !form.model.trim() || needKey) {
+    formError.value = '请完整填写：名称 / baseURL / 模型' + (needKey ? ' / API Key' : '');
     return;
   }
   submitting.value = true;
   try {
-    const body: CreateProviderRequest = { ...form, name: form.name.trim(), model: form.model.trim() };
+    const key = form.apiKey.trim();
+    const body: UpsertProviderRequest = {
+      ...form,
+      name: form.name.trim(),
+      model: form.model.trim(),
+      // 留空则不带该字段，服务端保持原值
+      apiKey: key || undefined,
+    };
     await store.save(body, editingId.value ?? undefined);
     closeForm();
   } catch (e) {
@@ -160,6 +179,7 @@ async function submit(): Promise<void> {
           </div>
           <div class="provider-meta">
             <code>{{ p.model }}</code>
+            <span class="tag">{{ p.apiKeyMasked }}</span>
             <span class="muted">{{ p.baseURL }}</span>
           </div>
           <p v-if="tested(p.id)" class="test-result" :class="{ ok: testOk(p.id) }">
@@ -206,8 +226,12 @@ async function submit(): Promise<void> {
 
         <label>
           API Key
-          <input v-model="form.apiKey" type="password" required />
-          <small v-if="currentPreset?.apiKeyHint" class="muted">{{ currentPreset.apiKeyHint }}</small>
+          <input
+            v-model="form.apiKey"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="apiKeyPlaceholder"
+          />
         </label>
 
         <label>

@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { CreateProviderRequest, ProviderPreset, ProviderSetting } from '@pa/shared';
+import type { ProviderPreset, ProviderPublic, UpsertProviderRequest } from '@pa/shared';
 import * as api from '../api/settings';
 
 export const useSettingsStore = defineStore('settings', () => {
   const presets = ref<ProviderPreset[]>([]);
-  const providers = ref<ProviderSetting[]>([]);
+  const providers = ref<ProviderPublic[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -26,7 +26,10 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function save(input: CreateProviderRequest, id?: string): Promise<ProviderSetting> {
+  async function save(
+    input: UpsertProviderRequest,
+    id?: string,
+  ): Promise<ProviderPublic> {
     const saved = id ? await api.updateProvider(id, input) : await api.createProvider(input);
     await load();
     return saved;

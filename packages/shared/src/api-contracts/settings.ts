@@ -7,22 +7,32 @@ export const ListPresetsResponseSchema = z.object({
 });
 export type ListPresetsResponse = z.infer<typeof ListPresetsResponseSchema>;
 
+/**
+ * 对外暴露的 provider —— 不含 apiKey（真实 key 永不下发前端），
+ * apiKeyMasked 仅用于展示（如 sk-***abcd）。
+ */
+export const ProviderPublicSchema = ProviderSettingSchema.omit({ apiKey: true }).extend({
+  apiKeyMasked: z.string(),
+});
+export type ProviderPublic = z.infer<typeof ProviderPublicSchema>;
+
 /** GET /api/settings/providers */
 export const ListProvidersResponseSchema = z.object({
-  providers: z.array(ProviderSettingSchema),
+  providers: z.array(ProviderPublicSchema),
 });
 export type ListProvidersResponse = z.infer<typeof ListProvidersResponseSchema>;
 
-/** POST /api/settings/providers */
-export const CreateProviderRequestSchema = ProviderSettingSchema.omit({
+/**
+ * POST /api/settings/providers（创建）与 PUT /api/settings/providers/:id（更新）。
+ * apiKey：创建时必填（服务端校验）；更新时留空/缺省 = 保持原值。
+ */
+export const UpsertProviderRequestSchema = ProviderSettingSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-});
-export type CreateProviderRequest = z.infer<typeof CreateProviderRequestSchema>;
-
-/** PUT /api/settings/providers/:id */
-export type UpdateProviderRequest = CreateProviderRequest;
+  apiKey: true,
+}).extend({ apiKey: z.string().optional() });
+export type UpsertProviderRequest = z.infer<typeof UpsertProviderRequestSchema>;
 
 /** POST /api/settings/providers/:id/test —— 用当前配置真实调用一次模型 */
 export const TestConnectionResponseSchema = z.object({

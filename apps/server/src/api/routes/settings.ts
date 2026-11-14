@@ -30,6 +30,6 @@ settingsRouter.del('/providers/:id', (ctx: Context) => {
 
 /** 真实调用一次模型验证配置（key 是否有效、模型名是否存在、网络是否通） */
 settingsRouter.post('/providers/:id/test', async (ctx: Context) => {
-  const setting = settingsService.get(ctx.params.id);
+  const setting = settingsService.getFull(ctx.params.id);
   ctx.body = await pingProvider(setting);
 });

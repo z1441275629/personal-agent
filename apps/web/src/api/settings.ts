@@ -1,8 +1,8 @@
 import type {
-  CreateProviderRequest,
+  UpsertProviderRequest,
   ListPresetsResponse,
   ListProvidersResponse,
-  ProviderSetting,
+  ProviderPublic,
   TestConnectionResponse,
 } from '@pa/shared';
 
@@ -25,17 +25,17 @@ export const fetchPresets = (): Promise<ListPresetsResponse> =>
 export const fetchProviders = (): Promise<ListProvidersResponse> =>
   request<ListProvidersResponse>('/api/settings/providers');
 
-export const createProvider = (body: CreateProviderRequest): Promise<ProviderSetting> =>
-  request<ProviderSetting>('/api/settings/providers', {
+export const createProvider = (body: UpsertProviderRequest): Promise<ProviderPublic> =>
+  request<ProviderPublic>('/api/settings/providers', {
     method: 'POST',
     body: JSON.stringify(body),
   });
 
 export const updateProvider = (
   id: string,
-  body: CreateProviderRequest,
-): Promise<ProviderSetting> =>
-  request<ProviderSetting>(`/api/settings/providers/${id}`, {
+  body: UpsertProviderRequest,
+): Promise<ProviderPublic> =>
+  request<ProviderPublic>(`/api/settings/providers/${id}`, {
     method: 'PUT',
     body: JSON.stringify(body),
   });
