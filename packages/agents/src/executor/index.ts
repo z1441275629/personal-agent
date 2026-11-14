@@ -49,7 +49,15 @@ export async function* runAgentLoop(
 
   for await (const [mode, payload] of stream) {
     if (mode === 'messages' && Array.isArray(payload)) {
-      const [chunkMsg] = payload as unknown as [{ content?: unknown }];
+      // 载荷 = [消息块, 元数据]。messages 模式不只吐模型 token：
+      // tools 节点写回的 ToolMessage（检索结果原文等）也会整条推出来，
+      // 不过滤会混进对话流——既显示给用户又落库。只放行模型节点的文本。
+      const [chunkMsg, meta] = payload as unknown as [
+        { content?: unknown },
+        { langgraph_node?: string } | undefined,
+      ];
+      if (meta?.langgraph_node === 'tools') continue;
+      if (chunkMsg instanceof ToolMessage) continue;
       const text = chunkText(chunkMsg?.content);
       if (text) yield { type: 'chunk', text };
     } else if (mode === 'updates' && payload && typeof payload === 'object') {
