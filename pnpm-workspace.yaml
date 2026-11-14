@@ -4,6 +4,7 @@ packages:
 
 # pnpm 12+：允许执行安装脚本的依赖（esbuild 二进制为 vite 所必需）
 allowBuilds:
+  electron: true
   electron-winstaller: true
   esbuild: true
 minimumReleaseAgeExclude:

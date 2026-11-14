@@ -22,11 +22,12 @@ function createWindow(): void {
     },
   });
 
-  const devUrl = process.env.PA_DEV_URL;
-  if (devUrl) {
+  // 开发模式（electron-vite dev）默认加载 Vite dev server；
+  // 生产模式加载本地 server（server 托管前端静态文件，业务阶段实现）
+  const devUrl = process.env.PA_DEV_URL ?? 'http://localhost:5173';
+  if (process.env.NODE_ENV === 'development') {
     void win.loadURL(devUrl);
   } else {
-    // 生产/默认：加载本地 server（server 同时托管前端静态文件，业务阶段实现）
     void win.loadURL('http://127.0.0.1:8787');
   }
 }
