@@ -16,11 +16,12 @@ export const useChatStore = defineStore('chat', () => {
     conversations.value = await api.fetchConversations();
   }
 
-  async function newConversation(): Promise<Conversation> {
-    const conv = await api.createConversation();
-    conversations.value = [conv, ...conversations.value];
-    await select(conv.id);
-    return conv;
+  /** 新会话：纯本地草稿，不落库；发首条消息时才由服务端创建 */
+  function startNewChat(): void {
+    activeId.value = null;
+    messages.value = [];
+    error.value = null;
+    streamingText.value = '';
   }
 
   async function select(id: string): Promise<void> {
@@ -34,20 +35,19 @@ export const useChatStore = defineStore('chat', () => {
     await api.deleteConversation(id);
     conversations.value = conversations.value.filter((c) => c.id !== id);
     if (activeId.value === id) {
-      activeId.value = null;
-      messages.value = [];
-      const next = conversations.value[0];
-      if (next) await select(next.id);
+      // 删除当前会话 → 回到新会话草稿（服务端是软删除，数据仍在库里）
+      startNewChat();
     }
   }
 
   /**
-   * 发送消息：本地先追加 user 消息，流式拼接 assistant 文本，
-   * 完成后以服务器返回的真实 id 刷新消息列表。
+   * 发送消息：本地先追加 user 消息，流式拼接 assistant 文本。
+   * activeId 为 null（草稿）时不带 conversationId，服务端创建会话后
+   * 从 meta 事件取回真实 id；完成后刷新消息与会话列表（拿到自动标题）。
    */
   async function send(content: string, providerId?: string): Promise<void> {
+    if (streaming.value) return;
     const convId = activeId.value;
-    if (!convId || streaming.value) return;
 
     error.value = null;
     streaming.value = true;
@@ -56,7 +56,7 @@ export const useChatStore = defineStore('chat', () => {
       ...messages.value,
       {
         id: `local-${Date.now()}`,
-        conversationId: convId,
+        conversationId: convId ?? 'draft',
         role: 'user',
         content,
         createdAt: Date.now(),
@@ -65,8 +65,16 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       let assistantId: string | null = null;
-      for await (const evt of api.sendMessage(convId, { content, providerId })) {
-        if (evt.type === 'chunk') {
+      for await (const evt of api.sendMessage({
+        content,
+        providerId,
+        conversationId: convId ?? undefined,
+      })) {
+        if (evt.type === 'meta') {
+          activeId.value = evt.conversationId;
+          // 草稿转正：立刻刷新侧栏（此时已带自动标题）
+          void loadConversations();
+        } else if (evt.type === 'chunk') {
           streamingText.value += evt.text;
         } else if (evt.type === 'done') {
           assistantId = evt.assistantMessageId;
@@ -74,9 +82,9 @@ export const useChatStore = defineStore('chat', () => {
           error.value = evt.message;
         }
       }
-      if (assistantId) {
+      if (assistantId && activeId.value) {
         // 用服务器持久化的完整数据刷新（拿到真实 id/时间戳与自动标题）
-        messages.value = await api.fetchMessages(convId);
+        messages.value = await api.fetchMessages(activeId.value);
         await loadConversations();
       }
     } catch (e) {
@@ -95,7 +103,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingText,
     error,
     loadConversations,
-    newConversation,
+    startNewChat,
     select,
     removeConversation,
     send,

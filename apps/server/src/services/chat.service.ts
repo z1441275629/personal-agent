@@ -36,9 +36,10 @@ export const chatService = {
     return conv;
   },
 
+  /** 软删除：库里的行和消息都保留，只是不再对外可见 */
   removeConversation(id: string): void {
     this.getConversation(id);
-    conversationsRepo.remove(id);
+    conversationsRepo.softRemove(id);
   },
 
   listMessages(conversationId: string): Message[] {

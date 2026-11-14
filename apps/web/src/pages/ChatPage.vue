@@ -47,8 +47,12 @@ function onKeydown(e: KeyboardEvent): void {
   <div class="chat-page">
     <!-- 会话侧栏 -->
     <aside class="sidebar">
-      <button class="btn primary new-chat" @click="chat.newConversation()">＋ 新对话</button>
+      <button class="btn primary new-chat" @click="chat.startNewChat()">＋ 新对话</button>
       <div class="conv-list">
+        <!-- 当前处于草稿（未落库的新会话）时置顶显示 -->
+        <div v-if="!chat.activeId" class="conv-item active">
+          <span class="conv-title">新对话</span>
+        </div>
         <div
           v-for="c in chat.conversations"
           :key="c.id"
@@ -78,8 +82,9 @@ function onKeydown(e: KeyboardEvent): void {
       </header>
 
       <div ref="messagesEl" class="messages">
-        <p v-if="!chat.activeId" class="empty">选择或新建一个对话开始</p>
-        <p v-else-if="!chat.messages.length" class="empty">输入消息开始对话</p>
+        <p v-if="!chat.messages.length && !chat.streaming" class="empty">
+          {{ chat.activeId ? '输入消息开始对话' : '输入消息，开始一段新对话' }}
+        </p>
 
         <div v-for="m in chat.messages" :key="m.id" class="bubble" :class="m.role">
           <div class="who">{{ m.role === 'user' ? '我' : '助手' }}</div>
@@ -102,10 +107,10 @@ function onKeydown(e: KeyboardEvent): void {
           v-model="input"
           rows="2"
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          :disabled="chat.streaming || !chat.activeId"
+          :disabled="chat.streaming"
           @keydown="onKeydown"
         />
-        <button class="btn primary" :disabled="!input.trim() || chat.streaming || !chat.activeId" @click="handleSend">
+        <button class="btn primary" :disabled="!input.trim() || chat.streaming" @click="handleSend">
           {{ chat.streaming ? '生成中…' : '发送' }}
         </button>
       </footer>

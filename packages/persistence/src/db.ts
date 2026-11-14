@@ -19,7 +19,8 @@ export function initDb(dataDir: string): DatabaseSync {
       id         TEXT PRIMARY KEY,
       title      TEXT NOT NULL,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER
     );
     CREATE TABLE IF NOT EXISTS messages (
       id              TEXT PRIMARY KEY,
@@ -31,6 +32,11 @@ export function initDb(dataDir: string): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation
       ON messages(conversation_id, created_at);
   `);
+  // 迁移：旧库 conversations 表没有 deleted_at（软删除标记）时补列，存量数据不动
+  const columns = db.prepare('PRAGMA table_info(conversations)').all() as unknown as { name: string }[];
+  if (!columns.some((c) => c.name === 'deleted_at')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN deleted_at INTEGER');
+  }
   return db;
 }
 

@@ -7,6 +7,7 @@ interface ConversationRow {
   title: unknown;
   created_at: unknown;
   updated_at: unknown;
+  deleted_at: unknown;
 }
 
 function toConversation(row: ConversationRow): Conversation {
@@ -33,17 +34,18 @@ export const conversationsRepo = {
     return conv;
   },
 
+  /** 未删除的会话；已软删除的（deleted_at 非空）对外不可见 */
   get(id: string): Conversation | undefined {
     const row = getDb()
-      .prepare('SELECT * FROM conversations WHERE id = ?')
+      .prepare('SELECT * FROM conversations WHERE id = ? AND deleted_at IS NULL')
       .get(id) as ConversationRow | undefined;
     return row ? toConversation(row) : undefined;
   },
 
-  /** 按最近活跃排序 */
+  /** 按最近活跃排序（不含已软删除） */
   list(): Conversation[] {
     const rows = getDb()
-      .prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
+      .prepare('SELECT * FROM conversations WHERE deleted_at IS NULL ORDER BY updated_at DESC')
       .all() as unknown as ConversationRow[];
     return rows.map(toConversation);
   },
@@ -58,7 +60,8 @@ export const conversationsRepo = {
       .run(title, Date.now(), id);
   },
 
-  remove(id: string): void {
-    getDb().prepare('DELETE FROM conversations WHERE id = ?').run(id);
+  /** 软删除：只打删除标记，行与消息都保留在库里 */
+  softRemove(id: string): void {
+    getDb().prepare('UPDATE conversations SET deleted_at = ? WHERE id = ?').run(Date.now(), id);
   },
 };

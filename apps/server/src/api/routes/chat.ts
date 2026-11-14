@@ -35,17 +35,21 @@ chatRouter.get('/conversations/:id/messages', (ctx: Context) => {
 
 /**
  * 发送消息 —— SSE 流式响应。
+ * body.conversationId 缺省时惰性创建新会话（真正开始聊天才落库，不产生空会话）。
  * 校验失败（404/400）走 JSON 错误；通过后切换为 event-stream 手写响应。
  */
-chatRouter.post('/conversations/:id/messages', async (ctx: Context) => {
+chatRouter.post('/messages', async (ctx: Context) => {
   const parsed = SendMessageRequestSchema.safeParse(ctx.request.body);
   if (!parsed.success) {
     const err = new Error(`参数校验失败: ${parsed.error.message}`) as Error & { status: number };
     err.status = 400;
     throw err;
   }
-  const conversation = chatService.getConversation(ctx.params.id);
+  // 先解析 provider：没有可用 provider 时直接 400，不留下空会话
   const provider = chatService.resolveProvider(parsed.data.providerId);
+  const conversation = parsed.data.conversationId
+    ? chatService.getConversation(parsed.data.conversationId)
+    : chatService.createConversation();
 
   ctx.respond = false;
   ctx.res.writeHead(200, {

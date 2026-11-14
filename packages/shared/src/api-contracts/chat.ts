@@ -16,9 +16,11 @@ export const ListMessagesResponseSchema = z.object({
 });
 export type ListMessagesResponse = z.infer<typeof ListMessagesResponseSchema>;
 
-/** POST /api/chat/conversations/:id/messages（SSE 流式响应） */
+/** POST /api/chat/messages（SSE 流式响应） */
 export const SendMessageRequestSchema = z.object({
   content: z.string().min(1).max(20_000),
+  /** 不传则惰性创建新会话（首条消息才落库）；传了必须是未删除的会话 id */
+  conversationId: z.string().optional(),
   /** 不传则用第一个启用的 provider */
   providerId: z.string().optional(),
 });
