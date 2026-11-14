@@ -2,3 +2,4 @@
 // 依赖方向：只允许向下引用（见 docs/architecture.md）
 export * from './providers/registry';
 export * from './providers/factory';
+export * from './stream';

@@ -1,4 +1,5 @@
 import { createApp } from './app';
+import { chatService } from './services/chat.service';
 import { env } from './config';
 
 /**
@@ -13,6 +14,8 @@ import { env } from './config';
  *   - infra/chroma.ts 建立 Chroma 连接与健康检查
  *   - events/index.ts 启动事件桥（→ desktop 原生通知）
  */
+chatService.init(); // 初始化 SQLite（DATA_DIR/personal-agent.db）
+
 const app = createApp();
 
 const server = app.listen(env.PORT, env.HOST, () => {
