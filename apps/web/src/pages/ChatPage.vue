@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
+import MarkdownText from '../components/MarkdownText.vue';
 
 const chat = useChatStore();
 const settings = useSettingsStore();
@@ -98,7 +99,9 @@ function onKeydown(e: KeyboardEvent): void {
 
         <div v-for="m in chat.messages" :key="m.id" class="bubble" :class="m.role">
           <div class="who">{{ m.role === 'user' ? '我' : '助手' }}</div>
-          <div class="text">{{ m.content }}</div>
+          <!-- AI 输出走 Markdown 渲染；用户消息保持纯文本 -->
+          <MarkdownText v-if="m.role === 'assistant'" :text="m.content" />
+          <div v-else class="text">{{ m.content }}</div>
         </div>
 
         <!-- 本轮工具调用步骤（agent 执行过程，不持久化） -->
@@ -114,8 +117,8 @@ function onKeydown(e: KeyboardEvent): void {
 
         <div v-if="chat.streaming" class="bubble assistant">
           <div class="who">助手</div>
-          <div class="text">
-            {{ chat.streamingText || '…' }}
+          <div class="streaming-row">
+            <MarkdownText :text="chat.streamingText || '…'" />
             <span class="cursor">▌</span>
           </div>
         </div>
@@ -252,6 +255,16 @@ function onKeydown(e: KeyboardEvent): void {
 }
 .cursor {
   animation: blink 1s step-start infinite;
+  color: #2c6ecb;
+}
+.streaming-row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+}
+.streaming-row .md {
+  min-width: 0;
 }
 @keyframes blink {
   50% {
