@@ -293,7 +293,7 @@ onMounted(() => {
       <span :class="kbSettings.chroma.healthy ? 'ok' : 'warn'">
         {{ kbSettings.chroma.healthy ? `向量库已连接（${kbSettings.chroma.kind}）` : '向量库未连接：向量化与向量检索暂不可用，关键词检索不受影响' }}
       </span>
-      <template v-if="!kbSettings.chroma.healthy">（启动：pnpm chroma:local）</template>
+      <template v-if="!kbSettings.chroma.healthy">（启动：pnpm chroma）</template>
       <template v-else-if="!kbSettings.embedding.model">
         · 当前为关键词检索，配置 embedding 后可升级向量检索
       </template>
