@@ -10,4 +10,4 @@ export { notificationsRepo } from './repositories/notifications';
 export type { NotificationDraft } from './repositories/notifications';
 export { memoriesRepo } from './repositories/memories';
 export { knowledgeRepo } from './repositories/knowledge';
-export type { KnowledgeChunkRow } from './repositories/knowledge';
+export type { LegacyChunkRow } from './repositories/knowledge';

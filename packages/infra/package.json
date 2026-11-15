@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "基础设施：日志、Chroma 客户端、HTTP、文件",
+  "description": "基础设施：日志、向量存储抽象（VectorStore/Chroma）、HTTP、文件",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -12,10 +12,10 @@
   },
   "dependencies": {
     "@pa/shared": "workspace:*",
-    "chromadb": "^3.5.0",
     "pino": "^10.4.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "typescript": "^5.9.0"
   }
 }

@@ -1,11 +1,16 @@
 import type {
   CreateKnowledgeDocumentRequest,
+  CreateKnowledgeDocumentResponse,
+  GetKnowledgeDocumentResponse,
   KnowledgeDocument,
+  KnowledgeDocumentDetail,
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
   KnowledgeSettingsResponse,
   ListKnowledgeDocumentsResponse,
   ReindexResponse,
+  UpdateKnowledgeDocumentRequest,
+  UpdateKnowledgeDocumentResponse,
   UpsertKnowledgeSettingsRequest,
 } from '@pa/shared';
 import { request } from './http';
@@ -13,11 +18,23 @@ import { request } from './http';
 export const fetchDocuments = (): Promise<KnowledgeDocument[]> =>
   request<ListKnowledgeDocumentsResponse>('/api/knowledge/documents').then((r) => r.documents);
 
+export const fetchDocument = (id: string): Promise<KnowledgeDocumentDetail> =>
+  request<GetKnowledgeDocumentResponse>(`/api/knowledge/documents/${id}`).then((r) => r.document);
+
 export const createDocument = (
   body: CreateKnowledgeDocumentRequest,
-): Promise<{ document: KnowledgeDocument; warning: string | null }> =>
-  request<{ document: KnowledgeDocument; warning: string | null }>('/api/knowledge/documents', {
+): Promise<CreateKnowledgeDocumentResponse> =>
+  request<CreateKnowledgeDocumentResponse>('/api/knowledge/documents', {
     method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const updateDocument = (
+  id: string,
+  body: UpdateKnowledgeDocumentRequest,
+): Promise<UpdateKnowledgeDocumentResponse> =>
+  request<UpdateKnowledgeDocumentResponse>(`/api/knowledge/documents/${id}`, {
+    method: 'PUT',
     body: JSON.stringify(body),
   });
 

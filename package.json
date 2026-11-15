@@ -14,7 +14,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test --if-present",
     "format": "prettier --write .",
-    "chroma": "docker compose -f docker/docker-compose.yml up -d chroma"
+    "chroma": "docker compose -f docker/docker-compose.yml up -d chroma",
+    "chroma:local": "chroma run --path data/chroma --port 8000"
   },
   "devDependencies": {
     "prettier": "^3.10.1"

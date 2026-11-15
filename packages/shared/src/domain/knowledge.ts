@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** 知识库文档（元信息；切片与向量不出库） */
+/** 知识库文档（注册表元信息；原文与向量不出现在此类型） */
 export const KnowledgeDocumentSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -9,8 +9,15 @@ export const KnowledgeDocumentSchema = z.object({
   /** 建立向量索引时使用的 embedding 模型；null = 仅关键词检索 */
   embeddingModel: z.string().nullable(),
   createdAt: z.number(),
+  updatedAt: z.number(),
 });
 export type KnowledgeDocument = z.infer<typeof KnowledgeDocumentSchema>;
+
+/** 文档详情（编辑对话框用）：元信息 + 完整原文 */
+export const KnowledgeDocumentDetailSchema = KnowledgeDocumentSchema.extend({
+  content: z.string(),
+});
+export type KnowledgeDocumentDetail = z.infer<typeof KnowledgeDocumentDetailSchema>;
 
 /**
  * 知识库设置（settings.json 的 knowledge 段）。

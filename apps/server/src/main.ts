@@ -1,8 +1,10 @@
 // LangSmith 追踪必须最先加载（在所有 LangChain 模块运行前就位）
 import './infra/tracing';
+import { ChromaVectorStore } from '@pa/infra';
 import { createApp } from './app';
 import { chatService } from './services/chat.service';
 import { settingsService } from './services/settings.service';
+import { knowledgeService } from './services/knowledge.service';
 import { mcpService } from './services/mcp.service';
 import { taskScheduler } from './scheduler';
 import { env } from './config';
@@ -13,15 +15,21 @@ import { env } from './config';
  * 运行形态：
  *   - 开发：pnpm dev:server（tsx）
  *   - 生产：由 apps/desktop 的 server-manager 以 utilityProcess 拉起 dist/server.cjs
- *
- * TODO(路线图）：
- *   - infra/chroma.ts 建立 Chroma 连接与健康检查
  */
 chatService.init(); // 初始化 SQLite（DATA_DIR/personal-agent.db）
+// 向量库 adapter（实现 @pa/infra 的 VectorStore 接口；换 Milvus 等只需替换此处）
+const vectorStore = new ChromaVectorStore({
+  url: env.CHROMA_URL,
+  collectionName: 'personal_agent_knowledge',
+});
 // 密钥迁移 + LangSmith 设置生效（须在 listen 前；桌面模式经 safeStorage 加密）
 void (async () => {
   await settingsService.init();
   await settingsService.applyLangsmith();
+  // 向量库注入 + 旧版 kb_chunks 一次性迁移（向量库不在线则推迟到下次启动）
+  await knowledgeService.init(vectorStore).catch((err) =>
+    console.warn('[knowledge] 初始化失败:', err instanceof Error ? err.message : err),
+  );
 })();
 taskScheduler.start(); // 注册定时任务（提醒 / 每日培训）
 // MCP 服务器异步连接（不阻塞监听；失败仅记录状态，设置页可见）

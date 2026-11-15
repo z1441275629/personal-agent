@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  KnowledgeDocumentDetailSchema,
   KnowledgeDocumentSchema,
   KnowledgeSettingsSchema,
 } from '../domain/knowledge';
@@ -16,6 +17,37 @@ export const CreateKnowledgeDocumentRequestSchema = z.object({
   content: z.string().min(1).max(2_000_000),
 });
 export type CreateKnowledgeDocumentRequest = z.infer<typeof CreateKnowledgeDocumentRequestSchema>;
+
+export const CreateKnowledgeDocumentResponseSchema = z.object({
+  document: KnowledgeDocumentSchema,
+  /** 摄取向量化失败时的提示（文档已按关键词模式入库） */
+  warning: z.string().nullable(),
+});
+export type CreateKnowledgeDocumentResponse = z.infer<typeof CreateKnowledgeDocumentResponseSchema>;
+
+/** GET /api/knowledge/documents/:id —— 详情（含完整原文） */
+export const GetKnowledgeDocumentResponseSchema = z.object({
+  document: KnowledgeDocumentDetailSchema,
+});
+export type GetKnowledgeDocumentResponse = z.infer<typeof GetKnowledgeDocumentResponseSchema>;
+
+/** PUT /api/knowledge/documents/:id —— 改名 / 替换内容（内容变更 = 重切分 + 重向量化） */
+export const UpdateKnowledgeDocumentRequestSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    content: z.string().min(1).max(2_000_000).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.content !== undefined, {
+    message: 'name 与 content 至少提供一项',
+  });
+export type UpdateKnowledgeDocumentRequest = z.infer<typeof UpdateKnowledgeDocumentRequestSchema>;
+
+export const UpdateKnowledgeDocumentResponseSchema = z.object({
+  document: KnowledgeDocumentDetailSchema,
+  /** 重向量化失败时的提示（文档已按关键词模式更新） */
+  warning: z.string().nullable(),
+});
+export type UpdateKnowledgeDocumentResponse = z.infer<typeof UpdateKnowledgeDocumentResponseSchema>;
 
 /** POST /api/knowledge/search */
 export const KnowledgeSearchRequestSchema = z.object({
@@ -39,7 +71,7 @@ export const KnowledgeSearchResponseSchema = z.object({
 });
 export type KnowledgeSearchResponse = z.infer<typeof KnowledgeSearchResponseSchema>;
 
-/** GET /api/knowledge/settings —— 附统计与掩码，设置页一屏展示 */
+/** GET /api/knowledge/settings —— 附统计、掩码与向量库状态，设置页一屏展示 */
 export const KnowledgeSettingsResponseSchema = KnowledgeSettingsSchema.extend({
   embedding: KnowledgeSettingsSchema.shape.embedding.extend({
     apiKeyMasked: z.string(),
@@ -49,6 +81,12 @@ export const KnowledgeSettingsResponseSchema = KnowledgeSettingsSchema.extend({
   documentCount: z.number().int(),
   totalChunks: z.number().int(),
   embeddedChunks: z.number().int(),
+  /** 向量库状态：未连接时向量检索/向量化不可用，关键词检索不受影响 */
+  chroma: z.object({
+    kind: z.string(),
+    url: z.string(),
+    healthy: z.boolean(),
+  }),
 });
 export type KnowledgeSettingsResponse = z.infer<typeof KnowledgeSettingsResponseSchema>;
 

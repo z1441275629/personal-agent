@@ -10,8 +10,8 @@ import type {
 import * as kb from '../api/knowledge';
 
 /**
- * 知识库页：文档管理（粘贴/导入 .txt/.md）+ 试搜。
- * 检索设置（embedding 独立配置：baseURL + apiKey + 模型）收在「检索设置」对话框中。
+ * 知识库页：文档全生命周期管理（导入/编辑替换/删除）+ 试搜。
+ * 原文存主库；向量索引存独立向量库（Chroma），检索设置收在「检索设置」对话框。
  */
 
 // ---------- 文档列表 ----------
@@ -31,7 +31,7 @@ async function loadDocuments(): Promise<void> {
 
 async function removeDoc(d: KnowledgeDocument): Promise<void> {
   try {
-    await ElMessageBox.confirm(`删除文档「${d.name}」及其全部切片？`, '删除确认', { type: 'warning' });
+    await ElMessageBox.confirm(`删除文档「${d.name}」及其全部切片与向量？`, '删除确认', { type: 'warning' });
   } catch {
     return;
   }
@@ -84,20 +84,86 @@ async function onFileChange(e: Event): Promise<void> {
 async function submitAdd(): Promise<void> {
   const valid = await addFormRef.value?.validate().catch(() => false);
   if (!valid) return;
+  const name = addName.value.trim();
+  const content = addContent.value;
   adding.value = true;
   try {
-    const { document, warning } = await kb.createDocument({
-      name: addName.value.trim(),
-      content: addContent.value,
-    });
+    // 同名文档：询问替换（PUT 重新切分/向量化）还是取消，避免重复堆积
+    const existing = documents.value.find((d) => d.name === name);
+    let warning: string | null;
+    let label: string;
+    if (existing) {
+      try {
+        await ElMessageBox.confirm(
+          `同名文档「${name}」已存在。替换其内容？（将重新切分与向量化，历史切片会被清理）`,
+          '替换文档',
+          { type: 'warning', confirmButtonText: '替换', cancelButtonText: '取消' },
+        );
+      } catch {
+        return; // 用户取消
+      }
+      const res = await kb.updateDocument(existing.id, { name, content });
+      warning = res.warning;
+      label = `已替换「${res.document.name}」（${res.document.chunkCount} 块）`;
+    } else {
+      const res = await kb.createDocument({ name, content });
+      warning = res.warning;
+      label = `已导入「${res.document.name}」（${res.document.chunkCount} 块）`;
+    }
     if (warning) ElMessage.warning(warning);
-    else ElMessage.success(`已导入「${document.name}」（${document.chunkCount} 块）`);
+    else ElMessage.success(label);
     showAdd.value = false;
     await Promise.all([loadDocuments(), loadKbSettings()]);
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : String(e));
   } finally {
     adding.value = false;
+  }
+}
+
+// ---------- 编辑文档 ----------
+const showEdit = ref(false);
+const savingEdit = ref(false);
+const editName = ref('');
+const editContent = ref('');
+const editingId = ref('');
+
+const editFormRef = ref<FormInstance>();
+const editModel = computed(() => ({ name: editName.value, content: editContent.value }));
+const editRules = {
+  name: [{ required: true, message: '请输入文档名称', trigger: 'blur' }],
+  content: [{ required: true, message: '内容不能为空', trigger: 'blur' }],
+};
+
+async function openEdit(d: KnowledgeDocument): Promise<void> {
+  try {
+    const detail = await kb.fetchDocument(d.id);
+    editingId.value = d.id;
+    editName.value = detail.name;
+    editContent.value = detail.content;
+    showEdit.value = true;
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function submitEdit(): Promise<void> {
+  const valid = await editFormRef.value?.validate().catch(() => false);
+  if (!valid) return;
+  savingEdit.value = true;
+  try {
+    const res = await kb.updateDocument(editingId.value, {
+      name: editName.value.trim(),
+      content: editContent.value,
+    });
+    if (res.warning) ElMessage.warning(res.warning);
+    else ElMessage.success(`已保存「${res.document.name}」（${res.document.chunkCount} 块）`);
+    showEdit.value = false;
+    await Promise.all([loadDocuments(), loadKbSettings()]);
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    savingEdit.value = false;
   }
 }
 
@@ -224,11 +290,13 @@ onMounted(() => {
     <p v-if="kbSettings" class="hint">
       共 {{ kbSettings.documentCount }} 篇文档 / {{ kbSettings.totalChunks }} 块切片，
       其中 {{ kbSettings.embeddedChunks }} 块已向量化。
-      {{
-        kbSettings.embedding.model
-          ? `向量模型：${kbSettings.embedding.model}`
-          : '当前为关键词检索（在「检索设置」里配置 embedding 后可升级向量检索）'
-      }}
+      <span :class="kbSettings.chroma.healthy ? 'ok' : 'warn'">
+        {{ kbSettings.chroma.healthy ? `向量库已连接（${kbSettings.chroma.kind}）` : '向量库未连接：向量化与向量检索暂不可用，关键词检索不受影响' }}
+      </span>
+      <template v-if="!kbSettings.chroma.healthy">（启动：pnpm chroma:local）</template>
+      <template v-else-if="!kbSettings.embedding.model">
+        · 当前为关键词检索，配置 embedding 后可升级向量检索
+      </template>
     </p>
 
     <!-- 文档列表 -->
@@ -243,11 +311,15 @@ onMounted(() => {
           </div>
           <div class="doc-meta">
             <span>{{ d.chunkCount }} 块 · {{ d.chars.toLocaleString() }} 字</span>
-            <span class="muted">{{ fmtTime(d.createdAt) }}</span>
+            <span class="muted">导入 {{ fmtTime(d.createdAt) }}</span>
+            <span v-if="d.updatedAt !== d.createdAt" class="muted">更新 {{ fmtTime(d.updatedAt) }}</span>
             <span v-if="d.embeddingModel" class="muted">{{ d.embeddingModel }}</span>
           </div>
         </div>
-        <el-button size="small" type="danger" plain @click="removeDoc(d)">删除</el-button>
+        <div class="doc-actions">
+          <el-button size="small" @click="openEdit(d)">编辑</el-button>
+          <el-button size="small" type="danger" plain @click="removeDoc(d)">删除</el-button>
+        </div>
       </div>
       <el-empty v-if="!documents.length && !loading" description="还没有文档。点右上角「导入文档」，粘贴文本或选择 .txt / .md 文件" />
     </section>
@@ -300,6 +372,29 @@ onMounted(() => {
         <el-button @click="showAdd = false">取消</el-button>
         <el-button type="primary" :loading="adding" :disabled="!addName.trim() || !addContent.trim()" @click="submitAdd">
           导入
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑文档对话框 -->
+    <el-dialog v-model="showEdit" title="编辑文档" width="640px">
+      <el-form ref="editFormRef" :model="editModel" :rules="editRules" label-width="80px">
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="editName" maxlength="200" />
+        </el-form-item>
+        <el-form-item label="内容" prop="content">
+          <el-input
+            v-model="editContent"
+            type="textarea"
+            :autosize="{ minRows: 10, maxRows: 20 }"
+          />
+        </el-form-item>
+      </el-form>
+      <p class="hint">保存将重新切分；若已配置 embedding 则重新向量化（替换旧向量）。</p>
+      <template #footer>
+        <el-button @click="showEdit = false">取消</el-button>
+        <el-button type="primary" :loading="savingEdit" :disabled="!editName.trim() || !editContent.trim()" @click="submitEdit">
+          保存
         </el-button>
       </template>
     </el-dialog>
@@ -404,6 +499,17 @@ onMounted(() => {
 .muted {
   color: #999;
   font-size: 12px;
+}
+.doc-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.hint .ok {
+  color: #67c23a;
+}
+.hint .warn {
+  color: #e6a23c;
 }
 .search-section {
   margin-top: 32px;

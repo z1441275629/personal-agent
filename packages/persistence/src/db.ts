@@ -69,17 +69,10 @@ export function initDb(dataDir: string): DatabaseSync {
       chars           INTEGER NOT NULL,
       chunk_count     INTEGER NOT NULL,
       embedding_model TEXT,
-      created_at      INTEGER NOT NULL
+      content         TEXT NOT NULL DEFAULT '',
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS kb_chunks (
-      id         TEXT PRIMARY KEY,
-      doc_id     TEXT NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
-      idx        INTEGER NOT NULL,
-      content    TEXT NOT NULL,
-      embedding  BLOB,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id, idx);
   `);
   // 迁移：旧库 conversations 表逐列补齐（软删除标记 / 滚动摘要），存量数据不动
   const columns = db.prepare('PRAGMA table_info(conversations)').all() as unknown as { name: string }[];
@@ -89,6 +82,15 @@ export function initDb(dataDir: string): DatabaseSync {
   }
   if (!columnNames.has('summary')) {
     db.exec('ALTER TABLE conversations ADD COLUMN summary TEXT');
+  }
+  // 迁移：kb_documents 补齐 原文 content / updated_at（切片向量已迁往 Chroma，见 knowledgeRepo.migrateLegacy）
+  const kbColumns = db.prepare('PRAGMA table_info(kb_documents)').all() as unknown as { name: string }[];
+  const kbColumnNames = new Set(kbColumns.map((c) => c.name));
+  if (!kbColumnNames.has('content')) {
+    db.exec("ALTER TABLE kb_documents ADD COLUMN content TEXT NOT NULL DEFAULT ''");
+  }
+  if (!kbColumnNames.has('updated_at')) {
+    db.exec('ALTER TABLE kb_documents ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0');
   }
   return db;
 }
