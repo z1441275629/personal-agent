@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "桌面个人助理：每日培训、学习检查、定时提醒、后台调研（Electron + Vue3 + Koa + LangChain.js + Chroma）",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "dev": "pnpm --parallel --filter @pa/server --filter @pa/web dev",
     "dev:server": "pnpm --filter @pa/server dev",
